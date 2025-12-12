@@ -7,15 +7,20 @@ import os
 import logging
 from dotenv import load_dotenv
 def validate_audio_data(audio_data):
-    """验证音频数据是否为有效的MP3格式（添加在文件开头import之后）"""
-    if not audio_data or len(audio_data) < 50:  # 修改1：阈值从100→50字节（适应Vercel网络波动）
-    # 修改2：检测MP3文件头（即使短也认可有效文件）
-    if audio_data.startswith(b'ID3') or audio_data.startswith(b'\xff\xe3'):
-        self.logger.info("检测到有效MP3文件头，忽略长度检查")  # 新增日志
+    """验证音频数据是否为有效的MP3格式（修复缩进错误）"""
+    if not audio_data or len(audio_data) < 50:
+        return False, "音频数据为空或过短"
+    # 检查MP3文件头（修复缩进：以下代码需缩进4个空格）
+    if audio_data.startswith(b'ID3'):  # ID3标签头（MP3标准格式）
+        return True, "有效的MP3文件(ID3标签)"  # ✅ 缩进4个空格
+    elif audio_data.startswith(b'\xff\xe3') or audio_data.startswith(b'\xff\xfb'):  # MP3音频帧头
+        return True, "有效的MP3文件(音频帧头)"  # ✅ 缩进4个空格
     else:
-        raise Exception("返回的音频数据无效")  # 仅在无有效头时报错
-
-
+        # 检查是否包含MP3同步帧（如未检测到文件头，但包含音频数据）
+        if b'\xff' in audio_data[:100]:  # MP3同步帧特征
+            return True, "可能有效的MP3文件(包含同步帧)"  # ✅ 缩进4个空格
+        else:
+            return False, "无效的MP3文件头（缺少关键标识）"  # ✅ 缩进4个空格
 # 加载环境变量
 load_dotenv()
 # --- 配置 ---

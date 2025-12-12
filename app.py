@@ -6,6 +6,16 @@ import time
 import os
 import logging
 from dotenv import load_dotenv
+def validate_audio_data(audio_data):
+    """验证音频数据是否为有效的MP3格式（添加在文件开头import之后）"""
+    if not audio_data or len(audio_data) < 50:  # 修改1：阈值从100→50字节（适应Vercel网络波动）
+    # 修改2：检测MP3文件头（即使短也认可有效文件）
+    if audio_data.startswith(b'ID3') or audio_data.startswith(b'\xff\xe3'):
+        self.logger.info("检测到有效MP3文件头，忽略长度检查")  # 新增日志
+    else:
+        raise Exception("返回的音频数据无效")  # 仅在无有效头时报错
+
+
 # 加载环境变量
 load_dotenv()
 # --- 配置 ---
@@ -685,6 +695,16 @@ def create_speech():
     logger.info(f"收到语音合成请求: model='{model_id}', input='{text_input[:30]}...'")  # 日志中截断长文本
     try:
         audio_data = tts_engine.get_audio(text_input, voice=model_id)
+    except Exception as e:
+        current_app.logger.error(f"调用TTS引擎失败：{str(e)}", exc_info=True)  # 记录详细错误
+        return jsonify({"error": "TTS引擎错误", "details": str(e)}), 500  # 返回错误响应
+        audio_data = tts_engine.get_audio(text_input, voice=model_id)
+        # 新增：验证音频数据（放在获取音频数据之后，返回响应之前）
+        is_valid, validation_msg = validate_audio_data(audio_data)
+        if not is_valid:
+            current_app.logger.error(f"音频生成失败：{validation_msg}")  # 记录错误日志
+            return jsonify({"error": "音频数据无效", "details": validation_msg}), 500  # 返回友好错误
+        current_app.logger.info(f"音频验证成功：{validation_msg}")  # 记录成功日志
         logger.info(f"语音合成成功，模型: {model_id}, 文本长度: {len(text_input)}")
         return Response(
     audio_data, 

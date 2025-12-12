@@ -686,7 +686,14 @@ def create_speech():
     try:
         audio_data = tts_engine.get_audio(text_input, voice=model_id)
         logger.info(f"语音合成成功，模型: {model_id}, 文本长度: {len(text_input)}")
-        return Response(audio_data, mimetype='audio/mpeg')
+        return Response(
+    audio_data, 
+    mimetype='audio/mpeg', 
+    headers={
+        'Content-Disposition': 'inline; filename="speech.mp3"',  # 告诉浏览器这是音频文件
+        'Content-Length': str(len(audio_data))  # 告诉浏览器文件大小
+    }
+)
     except Exception as e:
         logger.error(f"TTS引擎错误: {str(e)}", exc_info=True)
         return jsonify({"error": f"Failed to generate audio: {str(e)}"}), 500

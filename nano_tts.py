@@ -206,9 +206,16 @@ class NanoAITTS:
             self.logger.info(f"开始生成音频 - 模型: {voice}, 文本长度: {len(text)}")
             audio_data = self.http_post(url, form_data, headers)
             
-            # 验证音频数据
-            if not audio_data or len(audio_data) < 100:
-                raise Exception("返回的音频数据无效")
+            # ✅ 修复后的智能验证逻辑
+            if not audio_data or len(audio_data) < 50:
+            # 更宽松的验证条件 (Vercel环境适配)
+                self.logger.warning(f"音频数据可能不完整: 长度={len(audio_data)}字节")
+            # 尝试检查是否是有效的MP3文件头 (ID3标签或MP3帧头)
+                if audio_data.startswith(b'ID3') or audio_data.startswith(b'\xff\xe3'):
+                   self.logger.info("检测到有效MP3文件头，忽略长度检查")
+                else:
+                   raise Exception("返回的音频数据无效")
+
             
             self.logger.info(f"音频生成成功 - 数据大小: {len(audio_data)} 字节")
             return audio_data

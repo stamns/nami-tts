@@ -1,4 +1,14 @@
 {
-  "builds": [{"src": "app.py", "use": "@vercel/python"}],
-  "routes": [{"src": "/(.*)", "dest": "app.py"}]
+  "builds": [
+    {
+      "src": "app.py",  # 入口文件
+      "use": "@vercel/python"  # 告诉Vercel使用Python运行时
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",  # 所有请求
+      "dest": "app.py"  # 由app.py处理
+    }
+  ]
 }

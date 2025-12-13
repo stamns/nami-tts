@@ -1,4 +1,4 @@
-from flask import Flask, request, Response, jsonify, render_template_string, current_app  # 修复：新增 current_app 导入
+from flask import Flask, request, Response, jsonify, render_template_string, current_app
 from flask_cors import CORS
 from nano_tts import NanoAITTS
 import threading
@@ -7,20 +7,18 @@ import os
 import logging
 from dotenv import load_dotenv
 def validate_audio_data(audio_data):
-    """验证音频数据是否为有效的MP3格式（修复缩进错误）"""
+    """验证音频数据是否为有效的MP3格式"""
     if not audio_data or len(audio_data) < 50:
         return False, "音频数据为空或过短"
-    # 检查MP3文件头（修复缩进：以下代码需缩进4个空格）
-    if audio_data.startswith(b'ID3'):  # ID3标签头（MP3标准格式）
-        return True, "有效的MP3文件(ID3标签)"  # ✅ 缩进4个空格
-    elif audio_data.startswith(b'\xff\xe3') or audio_data.startswith(b'\xff\xfb'):  # MP3音频帧头
-        return True, "有效的MP3文件(音频帧头)"  # ✅ 缩进4个空格
+    if audio_data.startswith(b'ID3'):
+        return True, "有效的MP3文件(ID3标签)"
+    elif audio_data.startswith(b'\xff\xe3') or audio_data.startswith(b'\xff\xfb'):
+        return True, "有效的MP3文件(音频帧头)"
     else:
-        # 检查是否包含MP3同步帧（如未检测到文件头，但包含音频数据）
-        if b'\xff' in audio_data[:100]:  # MP3同步帧特征
-            return True, "可能有效的MP3文件(包含同步帧)"  # ✅ 缩进4个空格
+        if b'\xff' in audio_data[:100]:
+            return True, "可能有效的MP3文件(包含同步帧)"
         else:
-            return False, "无效的MP3文件头（缺少关键标识）"  # ✅ 缩进4个空格
+            return False, "无效的MP3文件头（缺少关键标识）"
 # 加载环境变量
 load_dotenv()
 # --- 配置 ---
@@ -68,7 +66,7 @@ try:
     model_cache = ModelCache(tts_engine)
 except Exception as e:
     logger.critical(f"TTS 引擎初始化失败: {str(e)}", exc_info=True)
-# HTML模板（保持不变，此处省略以节省空间，实际使用时保留原模板）
+# --- 完整HTML模板（必须保留，否则页面空白）---
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -76,19 +74,268 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>纳米AI TTS - OpenAI 兼容接口</title>
     <style>
-        /* 原CSS样式保持不变 */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
-        /* ... 其余CSS样式 ... */
+        .container { background: white; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); max-width: 800px; width: 100%; overflow: hidden; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; }
+        .header h1 { font-size: 28px; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+        .header p { opacity: 0.9; font-size: 14px; }
+        .content { padding: 30px; }
+        .section { margin-bottom: 25px; }
+        .section-title { font-size: 16px; font-weight: 600; color: #333; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-size: 14px; color: #555; margin-bottom: 8px; font-weight: 500; }
+        input[type="text"], input[type="password"], textarea, select { width: 100%; padding: 12px 15px; border: 2px solid #e0e0e0; border-radius: 10px; font-size: 14px; transition: all 0.3s; font-family: inherit; }
+        .password-wrapper { position: relative; display: flex; align-items: center; }
+        .password-wrapper input { padding-right: 45px; }
+        .toggle-password { position: absolute; right: 12px; cursor: pointer; font-size: 20px; user-select: none; transition: opacity 0.2s; }
+        .toggle-password:hover { opacity: 0.7; }
+        input:focus, textarea:focus, select:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+        textarea { resize: vertical; min-height: 120px; }
+        .btn { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 14px 30px; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.3s; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4); }
+        .btn:active { transform: translateY(0); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .btn-secondary { background: #6c757d; margin-top: 10px; }
+        .status { padding: 12px 15px; border-radius: 10px; margin-bottom: 20px; display: none; align-items: center; gap: 10px; }
+        .status.show { display: flex; }
+        .status.info { background: #e3f2fd; color: #1976d2; border: 1px solid #90caf9; }
+        .status.success { background: #e8f5e9; color: #388e3c; border: 1px solid #81c784; }
+        .status.error { background: #ffebee; color: #c62828; border: 1px solid #e57373; }
+        .models-list { max-height: 300px; overflow-y: auto; border: 2px solid #e0e0e0; border-radius: 10px; padding: 15px; }
+        .model-item { padding: 10px; margin-bottom: 8px; background: #f8f9fa; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: all 0.2s; }
+        .model-item:hover { background: #e9ecef; transform: translateX(5px); }
+        .model-item.selected { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .model-id { font-weight: 600; font-size: 13px; }
+        .model-name { font-size: 12px; opacity: 0.8; }
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 3px solid rgba(255,255,255,.3); border-radius: 50%; border-top-color: white; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .audio-player { margin-top: 20px; padding: 20px; background: #f8f9fa; border-radius: 10px; display: none; }
+        .audio-player.show { display: block; }
+        audio { width: 100%; margin-top: 10px; }
+        .char-count { text-align: right; font-size: 12px; color: #999; margin-top: 5px; }
+        .api-info { background: #f8f9fa; padding: 15px; border-radius: 10px; font-size: 13px; line-height: 1.6; color: #555; }
+        .api-info code { background: #e9ecef; padding: 2px 6px; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 12px; }
     </style>
 </head>
 <body>
-    <!-- 原HTML内容保持不变 -->
     <div class="container">
-        <!-- ... 原HTML结构 ... -->
+        <div class="header">
+            <h1>🎙️ 纳米AI TTS</h1>
+            <p>OpenAI 兼容接口 - 本地语音合成服务</p>
+        </div>
+        <div class="content">
+            <div id="status" class="status"></div>
+            <div class="section">
+                <div class="section-title">⚙️ 服务配置</div>
+                <div class="form-group">
+                    <label>API 地址</label>
+                    <input type="text" id="apiBase" value="" placeholder="">
+                </div>
+                <div class="form-group">
+                    <label>API 密钥</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="apiKey" value="sk-nanoai-your-secret-key" placeholder="sk-nanoai-your-secret-key">
+                        <span class="toggle-password" onclick="togglePasswordVisibility()" id="toggleIcon">👁️</span>
+                    </div>
+                </div>
+                <button class="btn btn-secondary" onclick="loadModels()">
+                    <span id="loadModelsIcon">🔄</span>
+                    <span>加载模型列表</span>
+                </button>
+            </div>
+            <div class="section">
+                <div class="section-title">🎵 选择声音模型</div>
+                <div id="modelsList" class="models-list">
+                    <div style="text-align: center; color: #999; padding: 20px;">
+                        点击上方"加载模型列表"按钮获取可用声音
+                    </div>
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">📝 输入文本</div>
+                <div class="form-group">
+                    <textarea id="textInput" placeholder="请输入要转换为语音的文本..." oninput="updateCharCount()"></textarea>
+                    <div class="char-count" id="charCount">字符数: 0</div>
+                </div>
+            </div>
+            <button class="btn" id="generateBtn" onclick="generateSpeech()">
+                <span>🎵</span>
+                <span>生成语音</span>
+            </button>
+            <div id="audioPlayer" class="audio-player">
+                <div class="section-title">🔊 生成的语音</div>
+                <audio id="audio" controls preload="metadata"></audio>
+                <button class="btn btn-secondary" onclick="downloadAudio()" style="margin-top: 10px;">
+                    <span>💾</span>
+                    <span>下载音频</span>
+                </button>
+            </div>
+            <div class="section" style="margin-top: 30px;">
+                <div class="section-title">ℹ️ API 使用说明</div>
+                <div class="api-info">
+                    <p><strong>接口地址：</strong> <code>POST /v1/audio/speech</code></p>
+                    <p><strong>请求示例：</strong></p>
+                    <pre style="background: #e9ecef; padding: 10px; border-radius: 5px; margin-top: 5px; overflow-x: auto;">curl http://127.0.0.1:5001/v1/audio/speech \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "DeepSeek", "input": "测试文本"}' \
+  --output speech.mp3</pre>
+                </div>
+            </div>
+        </div>
     </div>
     <script>
-        // 原JavaScript代码保持不变
+        let selectedModel = null;
+        let currentAudioBlob = null;
+        let currentAudioUrl = null;
+        window.addEventListener('load', () => {
+            const apiBaseInput = document.getElementById('apiBase');
+            if (!apiBaseInput.value) apiBaseInput.value = window.location.origin;
+            document.getElementById('toggleIcon').style.opacity = '0.6';
+        });
+        function updateCharCount() {
+            const text = document.getElementById('textInput').value;
+            const maxLength = 500;
+            const currentLength = text.length;
+            document.getElementById('charCount').textContent = `字符数: ${currentLength}/${maxLength}`;
+            document.getElementById('generateBtn').disabled = currentLength > maxLength;
+        }
+        function togglePasswordVisibility() {
+            const apiKeyInput = document.getElementById('apiKey');
+            const toggleIcon = document.getElementById('toggleIcon');
+            if (apiKeyInput.type === 'password') {
+                apiKeyInput.type = 'text';
+                toggleIcon.textContent = '🔓';
+                toggleIcon.style.opacity = '1';
+            } else {
+                apiKeyInput.type = 'password';
+                toggleIcon.textContent = '👁️';
+                toggleIcon.style.opacity = '0.6';
+            }
+        }
+        function showStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type} show`;
+            if (type === 'success' || type === 'error') setTimeout(() => status.classList.remove('show'), 5000);
+        }
+        async function loadModels() {
+            const apiBase = document.getElementById('apiBase').value;
+            const btn = event.target.closest('button');
+            const icon = document.getElementById('loadModelsIcon');
+            if (!apiBase) { showStatus('❌ 请先填写API地址', 'error'); return; }
+            btn.disabled = true;
+            icon.innerHTML = '<span class="spinner"></span>';
+            showStatus('正在加载模型列表...', 'info');
+            try {
+                const response = await fetch(`${apiBase}/v1/models`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                const data = await response.json();
+                const models = data.data || [];
+                if (models.length === 0) throw new Error('未找到可用模型');
+                renderModels(models);
+                showStatus(`✓ 成功加载 ${models.length} 个模型`, 'success');
+            } catch (error) {
+                showStatus(`❌ 加载失败: ${error.message}`, 'error');
+                console.error('加载模型失败:', error);
+            } finally {
+                btn.disabled = false;
+                icon.textContent = '🔄';
+            }
+        }
+        function renderModels(models) {
+            const container = document.getElementById('modelsList');
+            container.innerHTML = models.map(model => `
+                <div class="model-item" onclick="selectModel('${model.id}')">
+                    <div>
+                        <div class="model-id">${model.id}</div>
+                        <div class="model-name">${model.description || model.id}</div>
+                    </div>
+                    <div>🎤</div>
+                </div>
+            `).join('');
+        }
+        function selectModel(modelId) {
+            selectedModel = modelId;
+            document.querySelectorAll('.model-item').forEach(item => item.classList.remove('selected'));
+            event.currentTarget.classList.add('selected');
+            showStatus(`✓ 已选择模型: ${modelId}`, 'success');
+        }
+        function cleanupAudioUrl() {
+            if (currentAudioUrl) {
+                try { URL.revokeObjectURL(currentAudioUrl); } catch (e) { console.warn('清理音频URL失败:', e); }
+                currentAudioUrl = null;
+            }
+        }
+        async function generateSpeech() {
+            const apiBase = document.getElementById('apiBase').value;
+            const apiKey = document.getElementById('apiKey').value;
+            const textInput = document.getElementById('textInput').value.trim();
+            const btn = document.getElementById('generateBtn');
+            if (!apiBase) { showStatus('❌ 请先填写API地址', 'error'); return; }
+            if (!selectedModel) { showStatus('❌ 请先选择一个声音模型', 'error'); return; }
+            if (!textInput) { showStatus('❌ 请输入要转换的文本', 'error'); return; }
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span><span>生成中...</span>';
+            showStatus('正在生成语音...', 'info');
+            cleanupAudioUrl();
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000);
+                const response = await fetch(`${apiBase}/v1/audio/speech`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: selectedModel, input: textInput }),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                if (!response.ok) {
+                    let errorMsg = `HTTP ${response.status}`;
+                    try { const errorData = await response.json(); errorMsg = errorData.error || errorMsg; } catch (e) {}
+                    throw new Error(errorMsg);
+                }
+                const audioBlob = await response.blob();
+                if (!audioBlob.type.startsWith('audio/')) console.warn('警告: 返回的数据可能不是音频格式:', audioBlob.type);
+                currentAudioBlob = audioBlob;
+                currentAudioUrl = (window.URL || window.webkitURL).createObjectURL(audioBlob);
+                const audioElement = document.getElementById('audio');
+                audioElement.pause();
+                audioElement.src = '';
+                audioElement.load();
+                audioElement.src = currentAudioUrl;
+                audioElement.onerror = () => showStatus('❌ 音频播放失败，请尝试下载后播放', 'error');
+                audioElement.load();
+                document.getElementById('audioPlayer').classList.add('show');
+                showStatus('✓ 语音生成成功！', 'success');
+                try { const playPromise = audioElement.play(); if (playPromise) playPromise.catch(e => console.warn('自动播放被阻止:', e)); } catch (e) { console.warn('播放失败:', e); }
+            } catch (error) {
+                const msg = error.name === 'AbortError' ? '❌ 请求超时，请缩短文本或检查网络' : `❌ 生成失败: ${error.message}`;
+                showStatus(msg, 'error');
+                console.error('生成语音失败:', error);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span>🎵</span><span>生成语音</span>';
+            }
+        }
+        function downloadAudio() {
+            if (!currentAudioBlob) { showStatus('❌ 没有可下载的音频', 'error'); return; }
+            try {
+                const url = (window.URL || window.webkitURL).createObjectURL(currentAudioBlob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = `nanoai_speech_${Date.now()}.mp3`;
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => { document.body.removeChild(a); (window.URL || window.webkitURL).revokeObjectURL(url); }, 100);
+                showStatus('✓ 音频下载成功', 'success');
+            } catch (error) {
+                showStatus(`❌ 下载失败: ${error.message}`, 'error');
+                console.error('下载失败:', error);
+            }
+        }
+        window.addEventListener('beforeunload', cleanupAudioUrl);
     </script>
 </body>
 </html>"""
@@ -96,53 +343,44 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 @app.route('/')
 def index():
     return render_template_string(HTML_TEMPLATE)
-@app.route('/v1/audio/speech', methods=['POST'])    # 修复：规范路由格式（去除多余换行）
+@app.route('/v1/audio/speech', methods=['POST'])
 def create_speech():
     if not tts_engine:
         logger.error("TTS引擎未初始化，无法处理语音合成请求")
         return jsonify({"error": "TTS engine is not available due to initialization failure."}), 503
     auth_header = request.headers.get('Authorization')
     if not auth_header or not auth_header.startswith('Bearer '):
-        logger.warning("接收到缺少或无效Authorization头的请求")
+        logger.warning("缺少或无效的Authorization头")
         return jsonify({"error": "Authorization header is missing or invalid"}), 401
-    
     provided_key = auth_header.split(' ')[1]
     if provided_key != STATIC_API_KEY:
-        logger.warning(f"接收到无效API密钥的请求，密钥: {provided_key[:5]}***")
+        logger.warning(f"无效API密钥: {provided_key[:5]}***")
         return jsonify({"error": "Invalid API Key"}), 401
     try:
         data = request.get_json()
     except Exception as e:
-        logger.error(f"解析请求JSON失败: {str(e)}", exc_info=True)
+        logger.error(f"解析JSON失败: {str(e)}", exc_info=True)
         return jsonify({"error": "Invalid JSON body"}), 400
     model_id = data.get('model')
     text_input = data.get('input')
     if not model_id or not text_input:
-        logger.warning("请求缺少必填字段: 'model'或'input'")
+        logger.warning("缺少必填字段: 'model'或'input'")
         return jsonify({"error": "Missing required fields: 'model' and 'input'"}), 400
     available_models = model_cache.get_models()
     if model_id not in available_models:
-        logger.warning(f"请求了不存在的模型: {model_id}")
-        return jsonify({"error": f"Model '{model_id}' not found. Please use the /v1/models endpoint to see available models."}), 404
-    logger.info(f"收到语音合成请求: model='{model_id}', input='{text_input[:30]}...'")
-    
-    # 获取音频数据（带异常处理）
+        logger.warning(f"模型不存在: {model_id}")
+        return jsonify({"error": f"Model '{model_id}' not found. Use /v1/models to see available models."}), 404
+    logger.info(f"语音合成请求: model='{model_id}', input='{text_input[:30]}...'")
     try:
         audio_data = tts_engine.get_audio(text_input, voice=model_id)
     except Exception as e:
-        current_app.logger.error(f"调用TTS引擎失败：{str(e)}", exc_info=True)
-        return jsonify({"error": "TTS引擎错误", "details": str(e)}), 500
-    
-    # 验证音频数据（正常流程）
+        current_app.logger.error(f"TTS引擎错误: {str(e)}", exc_info=True)
+        return jsonify({"error": "TTS engine error", "details": str(e)}), 500
     is_valid, validation_msg = validate_audio_data(audio_data)
     if not is_valid:
-        current_app.logger.error(f"音频生成失败：{validation_msg}")
-        return jsonify({"error": "音频数据无效", "details": validation_msg}), 500
-    
-    current_app.logger.info(f"音频验证成功：{validation_msg}")
-    logger.info(f"语音合成成功，模型: {model_id}, 文本长度: {len(text_input)}")
-    
-    # 返回音频响应
+        current_app.logger.error(f"音频无效: {validation_msg}")
+        return jsonify({"error": "Invalid audio data", "details": validation_msg}), 500
+    current_app.logger.info(f"音频验证成功: {validation_msg}")
     return Response(
         audio_data,
         mimetype='audio/mpeg',
@@ -151,44 +389,25 @@ def create_speech():
             'Content-Length': str(len(audio_data))
         }
     )
-@app.route('/v1/models', methods=['GET'])    # 修复：规范路由格式
+@app.route('/v1/models', methods=['GET'])
 def list_models():
     if not model_cache:
-        logger.error("模型缓存未初始化，无法列出模型")
-        return jsonify({"error": "TTS engine is not available due to initialization failure."}), 503
+        logger.error("模型缓存未初始化")
+        return jsonify({"error": "TTS engine not initialized"}), 503
     available_models = model_cache.get_models()
-    logger.info(f"列出可用模型，共 {len(available_models)} 个")
-    
-    models_data = [
-        {
-            "id": model_id,
-            "object": "model",
-            "created": int(model_cache._last_updated),
-            "owned_by": "nanoai",
-            "description": model_name
-        }
-        for model_id, model_name in available_models.items()
-    ]
+    models_data = [{"id": k, "object": "model", "created": int(model_cache._last_updated), "owned_by": "nanoai", "description": v} for k, v in available_models.items()]
     return jsonify({"object": "list", "data": models_data})
-@app.route('/health', methods=['GET'])    # 修复：规范路由格式
+@app.route('/health', methods=['GET'])
 def health_check():
     if tts_engine and model_cache:
         model_count = len(model_cache.get_models())
-        logger.info(f"健康检查: 服务正常，模型数量: {model_count}")
-        return jsonify({
-            "status": "ok", 
-            "models_in_cache": model_count,
-            "timestamp": int(time.time())
-        }), 200
-    else:
-        logger.error("健康检查失败: TTS引擎未初始化")
-        return jsonify({"status": "error", "message": "TTS engine not initialized"}), 503
-# --- 启动服务 ---
+        return jsonify({"status": "ok", "models_in_cache": model_count, "timestamp": int(time.time())}), 200
+    return jsonify({"status": "error", "message": "TTS engine not initialized"}), 503
 if __name__ == '__main__':
     if tts_engine:
-        logger.info("正在预热模型缓存...")
+        logger.info("预热模型缓存...")
         model_cache.get_models()
-        logger.info(f"服务准备就绪，监听端口 {PORT}")
+        logger.info(f"服务启动，端口 {PORT}")
         app.run(host='0.0.0.0', port=PORT, debug=DEBUG)
     else:
-        logger.critical("无法启动Flask服务，因为TTS引擎初始化失败")
+        logger.critical("TTS引擎初始化失败，无法启动服务")

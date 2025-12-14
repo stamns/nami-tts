@@ -492,16 +492,43 @@
                     }
                     throw new Error(errorMsg);
                 }
-                // 获取音频数据
-                const audioBlob = await response.blob();
-                
-                // 验证blob类型
+                const contentTypeHeader = response.headers.get('Content-Type') || '';
+                const contentLengthHeader = response.headers.get('Content-Length') || '';
+                const contentEncodingHeader = response.headers.get('Content-Encoding') || '';
+                console.log('TTS响应头:', {
+                    contentType: contentTypeHeader,
+                    contentLength: contentLengthHeader,
+                    contentEncoding: contentEncodingHeader,
+                    audioValidation: response.headers.get('X-Audio-Validation') || '',
+                    audioSize: response.headers.get('X-Audio-Size') || '',
+                    audioFirstFrameOffset: response.headers.get('X-Audio-FirstFrameOffset') || ''
+                });
+
+                const audioArrayBuffer = await response.arrayBuffer();
+                const audioU8 = new Uint8Array(audioArrayBuffer);
+                const first16Hex = Array.from(audioU8.slice(0, 16))
+                    .map(b => b.toString(16).padStart(2, '0'))
+                    .join('');
+
+                console.log(`音频ArrayBuffer: ${audioArrayBuffer.byteLength} bytes, first16=${first16Hex}`);
+
+                if (contentLengthHeader) {
+                    const expected = Number(contentLengthHeader);
+                    if (!Number.isNaN(expected) && expected !== audioArrayBuffer.byteLength) {
+                        console.warn('Content-Length与实际长度不一致:', expected, audioArrayBuffer.byteLength);
+                    }
+                }
+
+                let blobType = contentTypeHeader.split(';')[0].trim();
+                if (!blobType || !blobType.startsWith('audio/')) blobType = 'audio/mpeg';
+
+                const audioBlob = new Blob([audioArrayBuffer], { type: blobType });
                 if (!audioBlob.type.startsWith('audio/')) {
                     console.warn('警告: 返回的数据可能不是音频格式:', audioBlob.type);
                 }
-                
+
                 currentAudioBlob = audioBlob;
-                
+
                 // 创建Blob URL - 兼容老旧浏览器
                 try {
                     currentAudioUrl = (window.URL || window.webkitURL).createObjectURL(audioBlob);
@@ -519,12 +546,19 @@
                 // 设置新的音频源
                 audioElement.src = currentAudioUrl;
                 
+                audioElement.onloadedmetadata = function() {
+                    console.log('音频metadata加载完成:', {
+                        duration: audioElement.duration,
+                        readyState: audioElement.readyState
+                    });
+                };
+
                 // 添加错误处理
                 audioElement.onerror = function(e) {
-                    console.error('音频加载错误:', e);
+                    console.error('音频加载错误:', e, audioElement.error);
                     showStatus('❌ 音频播放失败，请尝试下载后播放', 'error');
                 };
-                
+
                 // 确保音频可以播放
                 audioElement.load();
                 

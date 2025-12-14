@@ -4,9 +4,89 @@ import hashlib
 import json
 import os
 import logging
+import gzip
+from typing import Optional, Tuple, Dict, Any
 from datetime import datetime
 import random
 import time
+
+
+def _find_mp3_sync_offset(data: bytes, max_scan: int = 4096) -> Optional[int]:
+    if not data or len(data) < 2:
+        return None
+
+    scan_len = min(len(data), max_scan)
+    for i in range(scan_len - 1):
+        if data[i] == 0xFF and (data[i + 1] & 0xE0) == 0xE0:
+            return i
+    return None
+
+
+def _parse_id3v2_tag_size(data: bytes) -> Optional[int]:
+    if len(data) < 10 or not data.startswith(b"ID3"):
+        return None
+
+    # ID3v2 size is a 4-byte syncsafe integer at bytes 6..9
+    size_bytes = data[6:10]
+    if any(b & 0x80 for b in size_bytes):
+        return None
+
+    size = (size_bytes[0] << 21) | (size_bytes[1] << 14) | (size_bytes[2] << 7) | size_bytes[3]
+    return 10 + size
+
+
+def _validate_and_normalize_mp3(data: bytes) -> Tuple[bool, str, bytes, Dict[str, Any]]:
+    debug: Dict[str, Any] = {
+        "original_len": 0 if not data else len(data),
+        "decompressed": False,
+        "id3_present": False,
+        "id3_declared_end": None,
+        "first_sync_offset": None,
+        "trimmed_offset": None,
+        "normalized_len": 0,
+        "first16_hex": "" if not data else data[:16].hex(),
+    }
+
+    if not data:
+        return False, "音频数据为空", b"", debug
+
+    if len(data) >= 2 and data[0] == 0x1F and data[1] == 0x8B:
+        try:
+            decompressed = gzip.decompress(data)
+            debug["decompressed"] = True
+            data = decompressed
+            debug["first16_hex"] = data[:16].hex()
+        except Exception:
+            # 如果误判为gzip，直接继续后续校验
+            pass
+
+    if data.startswith(b"ID3"):
+        debug["id3_present"] = True
+        id3_end = _parse_id3v2_tag_size(data)
+        debug["id3_declared_end"] = id3_end
+
+        if id3_end is not None and id3_end < len(data):
+            if data[id3_end] == 0xFF and (data[id3_end + 1] & 0xE0) == 0xE0:
+                debug["first_sync_offset"] = id3_end
+                debug["normalized_len"] = len(data)
+                return True, "有效的MP3文件(ID3标签)", data, debug
+
+    sync_offset = _find_mp3_sync_offset(data)
+    debug["first_sync_offset"] = sync_offset
+
+    if sync_offset is None:
+        debug["normalized_len"] = len(data)
+        return False, "未检测到MP3同步帧", data, debug
+
+    if sync_offset > 0:
+        data = data[sync_offset:]
+        debug["trimmed_offset"] = sync_offset
+        debug["first16_hex"] = data[:16].hex()
+
+    debug["normalized_len"] = len(data)
+    return True, "有效的MP3文件(包含同步帧)", data, debug
+
+
 class NanoAITTS:
     def __init__(self):
         self.name = '纳米AI'
@@ -205,20 +285,39 @@ class NanoAITTS:
         try:
             self.logger.info(f"开始生成音频 - 模型: {voice}, 文本长度: {len(text)}")
             audio_data = self.http_post(url, form_data, headers)
-            
-            # ✅ 修复后的智能验证逻辑
-            if not audio_data or len(audio_data) < 50:
-            # 更宽松的验证条件 (Vercel环境适配)
-                self.logger.warning(f"音频数据可能不完整: 长度={len(audio_data)}字节")
-            # 尝试检查是否是有效的MP3文件头 (ID3标签或MP3帧头)
-                if audio_data.startswith(b'ID3') or audio_data.startswith(b'\xff\xe3'):
-                   self.logger.info("检测到有效MP3文件头，忽略长度检查")
-                else:
-                   raise Exception("返回的音频数据无效")
 
-            
-            self.logger.info(f"音频生成成功 - 数据大小: {len(audio_data)} 字节")
-            return audio_data
+            is_valid, msg, normalized_audio, debug = _validate_and_normalize_mp3(audio_data)
+            if not is_valid:
+                preview = normalized_audio[:200]
+                preview_text = preview.decode('utf-8', errors='replace')
+
+                trimmed = normalized_audio.lstrip()
+                if trimmed.startswith((b'{', b'[')):
+                    try:
+                        parsed = json.loads(trimmed.decode('utf-8'))
+                        raise Exception(f"上游返回JSON而非MP3: {parsed}")
+                    except Exception:
+                        pass
+
+                if trimmed.startswith(b'<'):
+                    raise Exception(f"上游返回HTML而非MP3，预览: {preview_text}")
+
+                raise Exception(f"返回的音频数据不是有效MP3: {msg}; first16={debug.get('first16_hex')}")
+
+            if debug.get('decompressed'):
+                self.logger.info(
+                    f"检测到gzip压缩内容并已解压: {debug.get('original_len')} -> {debug.get('normalized_len')} 字节"
+                )
+
+            if debug.get('trimmed_offset'):
+                self.logger.warning(
+                    f"MP3同步帧不在开头，已自动裁剪前置数据: offset={debug.get('trimmed_offset')}"
+                )
+
+            self.logger.info(
+                f"音频生成成功 - 数据大小: {len(normalized_audio)} 字节; 校验: {msg}; first16={debug.get('first16_hex')}"
+            )
+            return normalized_audio
             
         except Exception as e:
             self.logger.error(f"获取音频失败: {str(e)}", exc_info=True)

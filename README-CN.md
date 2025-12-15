@@ -91,6 +91,59 @@
 
 #### 安装步骤
 
+##### 方式一：使用 Makefile（推荐）
+
+项目提供了 Makefile 来简化本地开发流程：
+
+1. **克隆项目**
+
+```bash
+git clone https://github.com/stamns/nami-tts.git
+cd nami-tts
+```
+
+2. **安装依赖**
+
+```bash
+make install
+# 或使用: make setup
+```
+
+这个命令会自动创建虚拟环境并安装所有依赖。
+
+3. **配置 API Key**
+
+```bash
+cp .env.example .env
+# 编辑 .env 文件，填入你的 API Key
+nano .env
+```
+
+4. **启动服务**
+
+开启两个终端窗口：
+
+```bash
+# 终端 1 - 启动后端服务
+make dev-backend
+
+# 终端 2 - 启动前端服务
+make dev-frontend
+```
+
+5. **访问应用**
+
+打开浏览器访问：http://localhost:8000
+
+6. **运行测试**
+
+```bash
+make test
+# 或使用: make smoke-test
+```
+
+##### 方式二：手动安装
+
 1. **克隆项目**
 
 ```bash
@@ -101,10 +154,10 @@ cd nami-tts
 2. **创建虚拟环境**
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate  # Linux/Mac
+python3 -m venv .venv
+source .venv/bin/activate  # Linux/Mac
 # 或
-venv\Scripts\activate     # Windows
+.venv\Scripts\activate     # Windows
 ```
 
 3. **安装依赖**
@@ -124,7 +177,7 @@ nano .env
 示例 `.env` 文件：
 ```env
 # NanoAI API Key (必需)
-TTS_API_KEY=sk-your-nanoai-key-here
+SERVICE_API_KEY=sk-your-nanoai-key-here
 
 # 可选：其他提供商 API Key
 GOOGLE_API_KEY=your-google-key
@@ -146,12 +199,34 @@ SSL_VERIFY=true
 5. **启动服务**
 
 ```bash
-python3 app.py
+python3 -m flask --app backend.app run --port=5001
 ```
 
 6. **访问应用**
 
 打开浏览器访问：http://localhost:5001
+
+##### Makefile 命令参考
+
+项目根目录的 `Makefile` 提供了以下命令：
+
+| 命令 | 说明 |
+|------|------|
+| `make help` | 显示所有可用命令 |
+| `make install` | 创建虚拟环境并安装依赖 |
+| `make dev-backend` | 启动 Flask 后端服务（端口：5001） |
+| `make dev-frontend` | 启动静态前端服务（端口：8000） |
+| `make test` | 运行诊断测试脚本 |
+| `make clean` | 清理缓存和构建产物 |
+| `make clean-venv` | 删除虚拟环境 |
+
+环境变量可以通过命令行覆盖：
+
+```bash
+# 使用自定义端口
+BACKEND_PORT=5002 make dev-backend
+FRONTEND_PORT=8001 make dev-frontend
+```
 
 ### Docker 运行
 

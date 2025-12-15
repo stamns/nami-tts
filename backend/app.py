@@ -121,10 +121,37 @@ def _require_auth() -> Optional[Any]:
         return jsonify({"error": "Authorization header is missing or invalid"}), 401
     
     provided_key = parts[1]
+    
+    # 详细的调试日志：显示期望的key和实际接收的key
+    expected_key_masked = f"***{SERVICE_API_KEY[-4:]}" if len(SERVICE_API_KEY) > 4 else SERVICE_API_KEY
+    provided_key_masked = f"***{provided_key[-4:]}" if len(provided_key) > 4 else provided_key
+    
+    logger.info("=== 认证调试信息 ===")
+    logger.info(f"期望的SERVICE_API_KEY: {expected_key_masked} (长度: {len(SERVICE_API_KEY)})")
+    logger.info(f"实际提供的API Key: {provided_key_masked} (长度: {len(provided_key)})")
+    
+    # 检查是否是默认key（这可能表明环境变量没有正确设置）
+    if SERVICE_API_KEY == "sk-nanoai-your-secret-key":
+        logger.warning("⚠️  警告：使用的是默认API Key！请在环境变量中设置SERVICE_API_KEY")
+        logger.warning("⚠️  当前环境变量状态：")
+        logger.warning(f"  SERVICE_API_KEY: {os.getenv('SERVICE_API_KEY', '未设置')}")
+        logger.warning(f"  TTS_API_KEY: {os.getenv('TTS_API_KEY', '未设置')}")
+    
     if provided_key != SERVICE_API_KEY:
-        logger.warning("Authentication failed: invalid API key provided (key length: %d)", len(provided_key) if provided_key else 0)
+        logger.warning("Authentication failed: API key mismatch")
+        logger.warning(f"  Expected length: {len(SERVICE_API_KEY)}")
+        logger.warning(f"  Provided length: {len(provided_key)}")
+        logger.warning(f"  Keys match: {provided_key == SERVICE_API_KEY}")
+        
+        # 额外检查：可能是空格或编码问题
+        if len(provided_key) == len(SERVICE_API_KEY):
+            logger.warning("  ⚠️  长度相同，可能是字符不匹配或隐藏字符")
+            if provided_key.strip() == SERVICE_API_KEY.strip():
+                logger.warning("  ⚠️  可能是前后空格问题")
+        
         return jsonify({"error": "Invalid API Key"}), 401
 
+    logger.info("✅ 认证成功")
     return None
 
 
@@ -384,6 +411,46 @@ def diagnose():
     )
 
 
+@app.route("/v1/config/auth-debug", methods=["GET"])
+def config_auth_debug():
+    """API Key 调试信息端点 (公开访问)"""
+    current_service_key = SERVICE_API_KEY
+    env_service_key = os.getenv("SERVICE_API_KEY")
+    env_tts_key = os.getenv("TTS_API_KEY")
+    
+    # 使用掩码显示key信息（不暴露完整key）
+    def mask_key(key):
+        if not key:
+            return None
+        if len(key) <= 4:
+            return key
+        return f"***{key[-4:]}"
+    
+    return jsonify({
+        "debug": True,
+        "api_key_info": {
+            "current_service_api_key": {
+                "masked": mask_key(current_service_key),
+                "length": len(current_service_key) if current_service_key else 0,
+                "is_default": current_service_key == "sk-nanoai-your-secret-key"
+            },
+            "environment_variables": {
+                "SERVICE_API_KEY": {
+                    "value": mask_key(env_service_key),
+                    "length": len(env_service_key) if env_service_key else 0,
+                    "is_set": bool(env_service_key)
+                },
+                "TTS_API_KEY": {
+                    "value": mask_key(env_tts_key),
+                    "length": len(env_tts_key) if env_tts_key else 0,
+                    "is_set": bool(env_tts_key)
+                }
+            }
+        },
+        "recommendations": []
+    })
+
+
 @app.route("/v1/config", methods=["GET", "POST"])
 def config_endpoint():
     global SERVICE_API_KEY
@@ -443,7 +510,21 @@ def config_endpoint():
         os.environ[k] = v
         updated.append(k)
 
-    SERVICE_API_KEY = os.getenv("SERVICE_API_KEY") or os.getenv("TTS_API_KEY") or SERVICE_API_KEY
+    # 修复SERVICE_API_KEY更新逻辑
+    new_service_key = os.getenv("SERVICE_API_KEY")
+    new_tts_key = os.getenv("TTS_API_KEY") 
+    
+    old_service_key = SERVICE_API_KEY
+    
+    if new_service_key or new_tts_key:
+        # 优先使用SERVICE_API_KEY，如果为空则使用TTS_API_KEY
+        SERVICE_API_KEY = new_service_key or new_tts_key
+        logger.info(f"🔄 SERVICE_API_KEY 已更新:")
+        logger.info(f"  旧值: ***{old_service_key[-4:]} (长度: {len(old_service_key)})")
+        logger.info(f"  新值: ***{SERVICE_API_KEY[-4:]} (长度: {len(SERVICE_API_KEY)})")
+    else:
+        logger.info("SERVICE_API_KEY 无更新，保持原值")
+    
     _rebuild_tts_manager()
 
     return jsonify({"ok": True, "updated": updated})

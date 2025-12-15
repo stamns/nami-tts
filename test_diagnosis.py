@@ -40,11 +40,8 @@ def test_models_endpoint():
     """测试模型列表端点"""
     print("🤖 测试模型列表端点...")
     base_url = "http://localhost:5001"
-    api_key = "sk-nanoai-your-secret-key"
-    
-    if os.getenv('TTS_API_KEY'):
-        api_key = os.getenv('TTS_API_KEY')
-    
+    api_key = os.getenv('SERVICE_API_KEY') or os.getenv('TTS_API_KEY') or "sk-nanoai-your-secret-key"
+
     try:
         headers = {"Authorization": f"Bearer {api_key}"}
         response = requests.get(f"{base_url}/v1/models", headers=headers, timeout=10)
@@ -66,11 +63,8 @@ def test_tts_endpoint():
     """测试TTS端点"""
     print("🎵 测试TTS端点...")
     base_url = "http://localhost:5001"
-    api_key = "sk-nanoai-your-secret-key"
-    
-    if os.getenv('TTS_API_KEY'):
-        api_key = os.getenv('TTS_API_KEY')
-    
+    api_key = os.getenv('SERVICE_API_KEY') or os.getenv('TTS_API_KEY') or "sk-nanoai-your-secret-key"
+
     try:
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -124,8 +118,9 @@ def test_environment_check():
         from dotenv import load_dotenv
         load_dotenv()
         
+        active_key = os.getenv('SERVICE_API_KEY') or os.getenv('TTS_API_KEY')
         config = {
-            "API_KEY": "***" if os.getenv('TTS_API_KEY') and os.getenv('TTS_API_KEY') != 'sk-nanoai-your-secret-key' else "not_configured",
+            "API_KEY": "***" if active_key and active_key != 'sk-nanoai-your-secret-key' else "not_configured",
             "HTTP_TIMEOUT": os.getenv('HTTP_TIMEOUT', '30'),
             "RETRY_COUNT": os.getenv('RETRY_COUNT', '2'),
             "PROXY_URL": os.getenv('PROXY_URL', 'none'),
@@ -151,11 +146,7 @@ def main():
     print("=" * 60)
     
     base_url = "http://localhost:5001"
-    api_key = "sk-nanoai-your-secret-key"
-    
-    # 检查环境变量
-    if os.getenv('TTS_API_KEY'):
-        api_key = os.getenv('TTS_API_KEY')
+    api_key = os.getenv('SERVICE_API_KEY') or os.getenv('TTS_API_KEY') or "sk-nanoai-your-secret-key"
     
     print(f"测试配置:")
     print(f"  基础URL: {base_url}")

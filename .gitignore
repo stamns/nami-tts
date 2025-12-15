@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
+.pytest_cache/
 
 # Virtual environments
 .venv/
@@ -9,6 +10,17 @@ env/
 
 # Environment variables
 .env
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Temporary / backup files
+*.tmp
+*.bak
+*~
+*.orig
 
 # Build artifacts
 build/

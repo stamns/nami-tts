@@ -18,6 +18,9 @@ dist/
 # Local caches
 cache/
 
+# Local UI config (may contain encrypted secrets)
+.ui_config.json
+
 # Logs
 *.log
 

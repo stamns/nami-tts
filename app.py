@@ -1,4 +1,12 @@
-from flask import Flask, request, Response, jsonify, render_template_string, current_app
+from flask import (
+    Flask,
+    request,
+    Response,
+    jsonify,
+    render_template_string,
+    current_app,
+    send_from_directory,
+)
 from flask_cors import CORS
 from nano_tts import NanoAITTS
 import threading
@@ -8,6 +16,8 @@ import logging
 import gzip
 import hashlib
 import json
+import base64
+import hmac
 from typing import Optional, Tuple, Dict, Any
 from dotenv import load_dotenv
 
@@ -95,10 +105,78 @@ def validate_audio_data(audio_data: bytes) -> Tuple[bool, str]:
 # 加载环境变量
 load_dotenv()
 # --- 配置 ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_API_KEY = os.getenv('TTS_API_KEY', 'sk-nanoai-your-secret-key')
 CACHE_DURATION_SECONDS = int(os.getenv('CACHE_DURATION', 2 * 60 * 60))
 PORT = int(os.getenv('PORT', 5001))
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+
+UI_CONFIG_FILE = os.path.join(BASE_DIR, '.ui_config.json')
+UI_CONFIG_SECRET = os.getenv('UI_CONFIG_SECRET') or STATIC_API_KEY
+
+
+def _xor_bytes(data: bytes, key: bytes) -> bytes:
+    if not key:
+        raise ValueError('encryption key is empty')
+    return bytes(b ^ key[i % len(key)] for i, b in enumerate(data))
+
+
+def _ui_config_key_bytes() -> bytes:
+    return hashlib.sha256(UI_CONFIG_SECRET.encode('utf-8')).digest()
+
+
+def encrypt_ui_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    key = _ui_config_key_bytes()
+    plaintext = json.dumps(config, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    mac = hmac.new(key, plaintext, hashlib.sha256).hexdigest()
+    cipher = _xor_bytes(plaintext, key)
+    return {
+        'v': 1,
+        'alg': 'xor+sha256-hmac',
+        'mac': mac,
+        'data': base64.urlsafe_b64encode(cipher).decode('ascii'),
+    }
+
+
+def decrypt_ui_config(encrypted: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(encrypted, dict) or encrypted.get('v') != 1:
+        raise ValueError('unsupported config format')
+
+    key = _ui_config_key_bytes()
+    cipher_b64 = encrypted.get('data')
+    if not isinstance(cipher_b64, str) or not cipher_b64:
+        raise ValueError('missing encrypted data')
+
+    cipher = base64.urlsafe_b64decode(cipher_b64.encode('ascii'))
+    plaintext = _xor_bytes(cipher, key)
+    expected_mac = hmac.new(key, plaintext, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected_mac, str(encrypted.get('mac') or '')):
+        raise ValueError('invalid config mac')
+
+    decoded = json.loads(plaintext.decode('utf-8'))
+    if not isinstance(decoded, dict):
+        raise ValueError('invalid config content')
+    return decoded
+
+
+def load_ui_config_from_disk() -> Optional[Dict[str, Any]]:
+    try:
+        if not os.path.exists(UI_CONFIG_FILE):
+            return None
+        with open(UI_CONFIG_FILE, 'r', encoding='utf-8') as f:
+            encrypted = json.load(f)
+        return decrypt_ui_config(encrypted)
+    except Exception as e:
+        logger.warning('读取UI配置失败: %s', str(e))
+        return None
+
+
+def save_ui_config_to_disk(config: Dict[str, Any]) -> None:
+    encrypted = encrypt_ui_config(config)
+    with open(UI_CONFIG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(encrypted, f, ensure_ascii=False, indent=2)
+
+
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -474,7 +552,92 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 # --- 路由和API端点 ---
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    try:
+        return send_from_directory(BASE_DIR, 'index.html')
+    except Exception:
+        return render_template_string(HTML_TEMPLATE)
+
+
+def _require_static_api_key() -> Optional[tuple]:
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return jsonify({"error": "Authorization header is missing or invalid"}), 401
+
+    provided_key = auth_header.split(' ', 1)[1]
+    if provided_key != STATIC_API_KEY:
+        return jsonify({"error": "Invalid API Key"}), 401
+
+    return None
+
+
+@app.route('/v1/ui/config', methods=['GET'])
+def ui_config_public():
+    stored = None
+    if os.path.exists(UI_CONFIG_FILE):
+        stored = True
+    else:
+        stored = False
+
+    return jsonify(
+        {
+            "server": {
+                "defaultBaseUrl": request.host_url.rstrip('/'),
+                "hasStoredConfig": stored,
+            },
+            "defaults": {
+                "provider": "nanoai",
+                "language": "auto",
+                "speed": 1.0,
+                "pitch": 1.0,
+                "volume": 1.0,
+                "format": "mp3",
+            },
+            "providers": {
+                "nanoai": {
+                    "name": "NanoAI",
+                    "openaiCompatible": True,
+                    "supports": {
+                        "formats": ["mp3"],
+                        "languages": ["auto", "zh", "en", "ja", "ko"],
+                        "genders": ["neutral", "male", "female"],
+                    },
+                },
+                "google": {"name": "Google", "openaiCompatible": False},
+                "azure": {"name": "微软 Azure", "openaiCompatible": False},
+                "baidu": {"name": "百度", "openaiCompatible": False},
+                "aliyun": {"name": "阿里云", "openaiCompatible": False},
+            },
+        }
+    )
+
+
+@app.route('/v1/ui/config/secure', methods=['GET', 'PUT'])
+def ui_config_secure():
+    auth_err = _require_static_api_key()
+    if auth_err is not None:
+        return auth_err
+
+    if request.method == 'GET':
+        config = load_ui_config_from_disk() or {}
+        return jsonify({"config": config})
+
+    try:
+        payload = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify({"error": "Invalid JSON body"}), 400
+
+    config = payload.get('config')
+    if not isinstance(config, dict):
+        return jsonify({"error": "Missing or invalid field: config"}), 400
+
+    try:
+        save_ui_config_to_disk(config)
+    except Exception as e:
+        logger.error('保存UI配置失败: %s', str(e), exc_info=True)
+        return jsonify({"error": "Failed to save config", "details": str(e)}), 500
+
+    return jsonify({"ok": True})
+
 
 @app.route('/v1/audio/diagnose', methods=['GET', 'POST'])
 def diagnose_connection():

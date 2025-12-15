@@ -7,6 +7,7 @@ import os
 import logging
 import gzip
 import hashlib
+import json
 from typing import Optional, Tuple, Dict, Any
 from dotenv import load_dotenv
 
@@ -144,6 +145,13 @@ model_cache = None
 try:
     logger.info("正在初始化 TTS 引擎...")
     tts_engine = NanoAITTS()
+
+    try:
+        time_status = tts_engine.get_time_sync_status()
+        logger.info("启动时上游时间偏差诊断: %s", json.dumps(time_status, ensure_ascii=False))
+    except Exception as e:
+        logger.warning(f"启动时上游时间偏差诊断失败: {str(e)}")
+
     logger.info("TTS 引擎初始化完毕。")
     model_cache = ModelCache(tts_engine)
 except Exception as e:
@@ -669,9 +677,25 @@ def create_speech():
     if model_id not in available_models:
         logger.warning(f"模型不存在: {model_id}")
         return jsonify({"error": f"Model '{model_id}' not found. Use /v1/models to see available models."}), 404
-    logger.info(f"语音合成请求: model='{model_id}', input='{text_input[:30]}...'")
+    request_received_at = time.time()
+    try:
+        time_status = tts_engine.get_time_sync_status()
+    except Exception:
+        time_status = None
+
+    logger.info(
+        "语音合成请求: model='%s', input='%s...', local_epoch=%.3f, time_sync=%s",
+        model_id,
+        text_input[:30],
+        request_received_at,
+        time_status,
+    )
+
     try:
         audio_data = tts_engine.get_audio(text_input, voice=model_id)
+        last_time_info = tts_engine.get_last_request_time_info()
+        if last_time_info:
+            current_app.logger.info("上游时间诊断: %s", last_time_info)
     except Exception as e:
         current_app.logger.error(f"TTS引擎错误: {str(e)}", exc_info=True)
         return jsonify({"error": "TTS engine error", "details": str(e)}), 500
@@ -817,6 +841,13 @@ def health_check():
     # 简单的可用性检查
     voice_count = len(tts_engine.voices) if tts_engine.voices else 0
     
+    try:
+        time_status = tts_engine.get_time_sync_status()
+        last_request_time_info = tts_engine.get_last_request_time_info()
+    except Exception:
+        time_status = None
+        last_request_time_info = None
+
     status_info = {
         "status": "ok",
         "models_in_cache": voice_count,
@@ -831,7 +862,13 @@ def health_check():
             "api_key_configured": bool(STATIC_API_KEY and STATIC_API_KEY != 'sk-nanoai-your-secret-key'),
             "debug_mode": DEBUG,
             "cache_duration": CACHE_DURATION_SECONDS
-        }
+        },
+        "time": {
+            "local_time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "local_epoch_seconds": time.time(),
+            "upstream_time_sync": time_status,
+            "last_upstream_request": last_request_time_info,
+        },
     }
     
     # 如果没有可用声音，返回警告状态

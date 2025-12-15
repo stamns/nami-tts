@@ -30,6 +30,9 @@ dist/
 # Local caches
 cache/
 
+# UI configuration artifacts (generated at runtime, contains secrets)
+.ui_config.json
+
 # Logs
 *.log
 

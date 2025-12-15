@@ -5,6 +5,7 @@ import json
 import os
 import logging
 import gzip
+import ssl
 from typing import Optional, Tuple, Dict, Any
 from datetime import datetime
 import random
@@ -97,7 +98,16 @@ class NanoAITTS:
         self.ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36"
         self.voices = {}
         self.logger = logging.getLogger('NanoAITTS')  # 添加专用日志器
-        self.cache_dir = os.getenv('CACHE_DIR', 'cache')  # 缓存目录支持环境变量配置
+        
+        # 加载配置
+        self.cache_dir = os.getenv('CACHE_DIR', 'cache')
+        self.http_timeout = int(os.getenv('HTTP_TIMEOUT', '30'))
+        self.retry_count = int(os.getenv('RETRY_COUNT', '2'))
+        self.proxy_url = os.getenv('PROXY_URL', '').strip()
+        self.ssl_verify = os.getenv('SSL_VERIFY', 'true').lower() in ('true', '1', 'yes', 'on')
+        
+        self.logger.info(f"TTS引擎配置: timeout={self.http_timeout}s, retry={self.retry_count}, proxy={bool(self.proxy_url)}, ssl_verify={self.ssl_verify}")
+        
         self._ensure_cache_dir()  # 确保缓存目录存在
         self.load_voices()
     
@@ -182,38 +192,173 @@ class NanoAITTS:
             'User-Agent': self.ua
         }
     
-    def http_get(self, url, headers):
-        """使用标准库发送 GET 请求"""
+    def http_get(self, url, headers, timeout=None, retry_count=None):
+        """使用标准库发送 GET 请求，支持重试和代理"""
+        # 使用默认配置或参数传入的配置
+        timeout = timeout or self.http_timeout
+        retry_count = retry_count if retry_count is not None else self.retry_count
+        
+        # 构建请求对象
         req = urllib.request.Request(url, headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=30) as response:
-                return response.read().decode('utf-8')
-        except urllib.error.HTTPError as e:
-            self.logger.error(f"HTTP GET请求失败 - HTTP错误: {e.code} - {e.reason}", exc_info=True)
-            raise Exception(f"HTTP GET请求失败: {e.code} - {e.reason}")
-        except urllib.error.URLError as e:
-            self.logger.error(f"HTTP GET请求失败 - URL错误: {e.reason}", exc_info=True)
-            raise Exception(f"HTTP GET请求失败: {e.reason}")
-        except Exception as e:
-            self.logger.error(f"HTTP GET请求失败 - 未知错误: {str(e)}", exc_info=True)
-            raise Exception(f"HTTP GET请求失败: {str(e)}")
+        
+        # 配置代理
+        if self.proxy_url:
+            proxy_handler = urllib.request.ProxyHandler({'http': self.proxy_url, 'https': self.proxy_url})
+            opener = urllib.request.build_opener(proxy_handler)
+            self.logger.debug(f"使用代理: {self.proxy_url}")
+        else:
+            opener = urllib.request.build_opener()
+        
+        # 配置SSL验证
+        if not self.ssl_verify:
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            opener.add_handler(urllib.request.HTTPSHandler(context=ssl_context))
+            self.logger.debug("SSL证书验证已禁用")
+        
+        for attempt in range(retry_count + 1):
+            try:
+                with opener.open(req, timeout=timeout) as response:
+                    response_data = response.read().decode('utf-8')
+                    
+                    # 检查响应状态码
+                    if response.getcode() >= 400:
+                        raise Exception(f"HTTP错误状态码: {response.getcode()}")
+                    
+                    self.logger.debug(f"HTTP GET请求成功 (尝试 {attempt + 1}): {len(response_data)} bytes")
+                    return response_data
+                    
+            except urllib.error.HTTPError as e:
+                error_msg = f"HTTP GET请求失败 (尝试 {attempt + 1}) - HTTP错误: {e.code} - {e.reason}"
+                self.logger.warning(error_msg)
+                
+                # 如果是客户端错误（4xx），不重试
+                if 400 <= e.code < 500:
+                    raise Exception(f"HTTP GET请求失败: {e.code} - {e.reason}")
+                
+                # 服务器错误（5xx）可以重试
+                if attempt < retry_count:
+                    self.logger.info(f"将在2秒后重试...")
+                    time.sleep(2)
+                    continue
+                else:
+                    self.logger.error(error_msg, exc_info=True)
+                    raise Exception(f"HTTP GET请求失败: {e.code} - {e.reason}")
+                    
+            except urllib.error.URLError as e:
+                error_msg = f"HTTP GET请求失败 (尝试 {attempt + 1}) - URL错误: {e.reason}"
+                self.logger.warning(error_msg)
+                
+                if attempt < retry_count:
+                    self.logger.info(f"将在2秒后重试...")
+                    time.sleep(2)
+                    continue
+                else:
+                    self.logger.error(error_msg, exc_info=True)
+                    raise Exception(f"HTTP GET请求失败: {e.reason}")
+                    
+            except Exception as e:
+                error_msg = f"HTTP GET请求失败 (尝试 {attempt + 1}) - 未知错误: {str(e)}"
+                self.logger.error(error_msg, exc_info=True)
+                
+                if attempt < retry_count:
+                    self.logger.info(f"将在2秒后重试...")
+                    time.sleep(2)
+                    continue
+                else:
+                    raise Exception(f"HTTP GET请求失败: {str(e)}")
+        
+        # 理论上不会到达这里
+        raise Exception("所有重试尝试均失败")
     
-    def http_post(self, url, data, headers):
-        """使用标准库发送 POST 请求"""
+    def http_post(self, url, data, headers, timeout=None, retry_count=None):
+        """使用标准库发送 POST 请求，支持重试和代理"""
+        # 使用默认配置或参数传入的配置
+        timeout = timeout or self.http_timeout
+        retry_count = retry_count if retry_count is not None else self.retry_count
+        
         data_bytes = data.encode('utf-8')
+        
+        # 构建请求对象
         req = urllib.request.Request(url, data=data_bytes, headers=headers, method='POST')
-        try:
-            with urllib.request.urlopen(req, timeout=30) as response:
-                return response.read()
-        except urllib.error.HTTPError as e:
-            self.logger.error(f"HTTP POST请求失败 - HTTP错误: {e.code} - {e.reason}", exc_info=True)
-            raise Exception(f"HTTP POST请求失败: {e.code} - {e.reason}")
-        except urllib.error.URLError as e:
-            self.logger.error(f"HTTP POST请求失败 - URL错误: {e.reason}", exc_info=True)
-            raise Exception(f"HTTP POST请求失败: {e.reason}")
-        except Exception as e:
-            self.logger.error(f"HTTP POST请求失败 - 未知错误: {str(e)}", exc_info=True)
-            raise Exception(f"HTTP POST请求失败: {str(e)}")
+        
+        # 配置代理
+        if self.proxy_url:
+            proxy_handler = urllib.request.ProxyHandler({'http': self.proxy_url, 'https': self.proxy_url})
+            opener = urllib.request.build_opener(proxy_handler)
+            self.logger.debug(f"使用代理: {self.proxy_url}")
+        else:
+            opener = urllib.request.build_opener()
+        
+        # 配置SSL验证
+        if not self.ssl_verify:
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            opener.add_handler(urllib.request.HTTPSHandler(context=ssl_context))
+            self.logger.debug("SSL证书验证已禁用")
+        
+        for attempt in range(retry_count + 1):
+            try:
+                with opener.open(req, timeout=timeout) as response:
+                    response_data = response.read()
+                    
+                    # 检查响应状态码
+                    if response.getcode() >= 400:
+                        raise Exception(f"HTTP错误状态码: {response.getcode()}")
+                    
+                    self.logger.debug(f"HTTP POST请求成功 (尝试 {attempt + 1}): {len(response_data)} bytes")
+                    return response_data
+                    
+            except urllib.error.HTTPError as e:
+                error_msg = f"HTTP POST请求失败 (尝试 {attempt + 1}) - HTTP错误: {e.code} - {e.reason}"
+                self.logger.warning(error_msg)
+                
+                # 如果是客户端错误（4xx），不重试
+                if 400 <= e.code < 500:
+                    # 尝试读取错误响应体
+                    try:
+                        error_body = e.read().decode('utf-8', errors='replace')
+                        self.logger.error(f"错误响应体: {error_body[:500]}")
+                    except:
+                        pass
+                    raise Exception(f"HTTP POST请求失败: {e.code} - {e.reason}")
+                
+                # 服务器错误（5xx）可以重试
+                if attempt < retry_count:
+                    self.logger.info(f"将在2秒后重试...")
+                    time.sleep(2)
+                    continue
+                else:
+                    self.logger.error(error_msg, exc_info=True)
+                    raise Exception(f"HTTP POST请求失败: {e.code} - {e.reason}")
+                    
+            except urllib.error.URLError as e:
+                error_msg = f"HTTP POST请求失败 (尝试 {attempt + 1}) - URL错误: {e.reason}"
+                self.logger.warning(error_msg)
+                
+                if attempt < retry_count:
+                    self.logger.info(f"将在2秒后重试...")
+                    time.sleep(2)
+                    continue
+                else:
+                    self.logger.error(error_msg, exc_info=True)
+                    raise Exception(f"HTTP POST请求失败: {e.reason}")
+                    
+            except Exception as e:
+                error_msg = f"HTTP POST请求失败 (尝试 {attempt + 1}) - 未知错误: {str(e)}"
+                self.logger.error(error_msg, exc_info=True)
+                
+                if attempt < retry_count:
+                    self.logger.info(f"将在2秒后重试...")
+                    time.sleep(2)
+                    continue
+                else:
+                    raise Exception(f"HTTP POST请求失败: {str(e)}")
+        
+        # 理论上不会到达这里
+        raise Exception("所有重试尝试均失败")
     
     def load_voices(self):
         """加载声音列表"""
@@ -223,37 +368,64 @@ class NanoAITTS:
             # 首先尝试从缓存文件加载
             if os.path.exists(filename):
                 self.logger.info(f"从缓存文件加载声音列表: {filename}")
-                with open(filename, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-            else:
-                self.logger.info("从网络获取声音列表...")
-                response_text = self.http_get('https://bot.n.cn/api/robot/platform', self.get_headers())
-                data = json.loads(response_text)
-                
-                # 保存到缓存文件
                 try:
-                    with open(filename, 'w', encoding='utf-8') as f:
-                        json.dump(data, f, ensure_ascii=False, indent=2)
-                    self.logger.info(f"声音列表已缓存到: {filename}")
+                    with open(filename, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    
+                    # 验证缓存数据格式
+                    if self._validate_voice_data(data):
+                        self.voices.clear()
+                        for item in data['data']['list']:
+                            self.voices[item['tag']] = {
+                                'name': item['title'],
+                                'iconUrl': item['icon']
+                            }
+                        self.logger.info(f"从缓存成功加载 {len(self.voices)} 个声音模型")
+                        return
+                    else:
+                        self.logger.warning("缓存文件数据格式不正确，将重新从网络获取")
+                        
                 except Exception as e:
-                    self.logger.warning(f"保存缓存文件失败: {str(e)}")
+                    self.logger.warning(f"加载缓存文件失败: {str(e)}")
             
-            # 清空旧的声音列表
-            self.voices.clear()
-            if 'data' in data and 'list' in data['data']:
-                for item in data['data']['list']:
-                    self.voices[item['tag']] = {
-                        'name': item['title'],
-                        'iconUrl': item['icon']
-                    }
-                self.logger.info(f"成功加载 {len(self.voices)} 个声音模型")
-            else:
-                self.logger.warning("API返回的数据格式不正确")
-                raise Exception("API返回的数据格式不正确")
-                
-        except json.JSONDecodeError as e:
-            self.logger.error(f"解析JSON数据失败: {str(e)}", exc_info=True)
-            raise Exception(f"解析JSON数据失败: {str(e)}")
+            # 从网络获取声音列表
+            self.logger.info("从网络获取声音列表...")
+            api_url = 'https://bot.n.cn/api/robot/platform'
+            headers = self.get_headers()
+            
+            for attempt in range(3):  # 最多尝试3次
+                try:
+                    response_text = self.http_get(api_url, headers)
+                    data = json.loads(response_text)
+                    
+                    if self._validate_voice_data(data):
+                        # 保存到缓存文件
+                        try:
+                            with open(filename, 'w', encoding='utf-8') as f:
+                                json.dump(data, f, ensure_ascii=False, indent=2)
+                            self.logger.info(f"声音列表已缓存到: {filename}")
+                        except Exception as e:
+                            self.logger.warning(f"保存缓存文件失败: {str(e)}")
+                        
+                        # 清空旧的声音列表并更新
+                        self.voices.clear()
+                        for item in data['data']['list']:
+                            self.voices[item['tag']] = {
+                                'name': item['title'],
+                                'iconUrl': item['icon']
+                            }
+                        self.logger.info(f"从网络成功加载 {len(self.voices)} 个声音模型")
+                        return
+                    else:
+                        raise Exception("API返回的数据格式不正确")
+                        
+                except Exception as e:
+                    self.logger.warning(f"网络获取声音列表失败 (尝试 {attempt + 1}): {str(e)}")
+                    if attempt < 2:  # 不是最后一次尝试
+                        time.sleep(2)  # 等待2秒后重试
+                    else:
+                        raise
+                        
         except Exception as e:
             self.logger.error(f"加载声音列表失败: {str(e)}", exc_info=True)
             self.voices.clear()
@@ -261,7 +433,21 @@ class NanoAITTS:
             self.voices['DeepSeek'] = {'name': 'DeepSeek (默认)', 'iconUrl': ''}
             self.logger.warning("使用默认声音模型")
     
-    def get_audio(self, text, voice='DeepSeek'):
+    def _validate_voice_data(self, data):
+        """验证声音数据格式"""
+        try:
+            return (
+                isinstance(data, dict) and
+                'data' in data and
+                isinstance(data['data'], dict) and
+                'list' in data['data'] and
+                isinstance(data['data']['list'], list) and
+                len(data['data']['list']) > 0
+            )
+        except Exception:
+            return False
+    
+    def get_audio(self, text, voice='DeepSeek', timeout=60, retry_count=2):
         """获取音频"""
         if not text or not text.strip():
             raise ValueError("文本不能为空")
@@ -276,49 +462,108 @@ class NanoAITTS:
         
         # 限制文本长度，避免请求过大
         max_length = 1000
+        original_length = len(text)
         if len(text) > max_length:
-            self.logger.warning(f"文本长度超过限制({max_length})，将被截断")
+            self.logger.warning(f"文本长度超过限制({max_length})，将被截断: {original_length} -> {max_length}")
             text = text[:max_length]
         
         form_data = f'&text={urllib.parse.quote(text)}&audio_type=mp3&format=stream'
         
-        try:
-            self.logger.info(f"开始生成音频 - 模型: {voice}, 文本长度: {len(text)}")
-            audio_data = self.http_post(url, form_data, headers)
+        for attempt in range(retry_count + 1):
+            try:
+                self.logger.info(f"开始生成音频 - 模型: {voice}, 文本长度: {len(text)} (尝试 {attempt + 1}/{retry_count + 1})")
+                
+                start_time = time.time()
+                audio_data = self.http_post(url, form_data, headers, timeout=timeout)
+                duration = time.time() - start_time
 
-            is_valid, msg, normalized_audio, debug = _validate_and_normalize_mp3(audio_data)
-            if not is_valid:
-                preview = normalized_audio[:200]
-                preview_text = preview.decode('utf-8', errors='replace')
+                self.logger.debug(f"API响应时间: {duration:.2f}秒, 响应大小: {len(audio_data)}字节")
 
-                trimmed = normalized_audio.lstrip()
-                if trimmed.startswith((b'{', b'[')):
+                # 检查响应内容
+                first_16_hex = audio_data[:16].hex()
+                is_json_response = audio_data.startswith((b'{', b'['))
+                
+                if is_json_response:
                     try:
-                        parsed = json.loads(trimmed.decode('utf-8'))
-                        raise Exception(f"上游返回JSON而非MP3: {parsed}")
-                    except Exception:
-                        pass
+                        json_response = json.loads(audio_data.decode('utf-8', errors='replace'))
+                        error_code = json_response.get('code', 'unknown')
+                        error_message = json_response.get('message', json_response.get('msg', 'unknown'))
+                        
+                        # 根据错误代码提供更具体的错误信息
+                        if error_code == '110023':
+                            error_detail = "API认证失败或权限不足，请检查API密钥配置"
+                        elif error_code in ['40001', '40002']:
+                            error_detail = "请求参数错误，请检查文本内容和模型名称"
+                        elif error_code in ['50001', '50002']:
+                            error_detail = "服务器内部错误，请稍后重试"
+                        else:
+                            error_detail = f"API错误代码: {error_code}, 错误信息: {error_message}"
+                        
+                        self.logger.error(f"API返回错误响应: {json_response}")
+                        self.logger.error(f"错误诊断: {error_detail}")
+                        
+                        # 如果是认证错误且不是最后一次尝试，等待后重试
+                        if error_code == '110023' and attempt < retry_count:
+                            self.logger.info("检测到认证错误，将在5秒后重试...")
+                            time.sleep(5)
+                            continue
+                        else:
+                            raise Exception(f"上游API错误: {error_detail}")
+                            
+                    except json.JSONDecodeError:
+                        self.logger.warning(f"收到JSON格式响应但无法解析: {first_16_hex}")
+                        # 继续处理，可能是非标准JSON格式
 
-                if trimmed.startswith(b'<'):
-                    raise Exception(f"上游返回HTML而非MP3，预览: {preview_text}")
+                is_valid, msg, normalized_audio, debug = _validate_and_normalize_mp3(audio_data)
+                if not is_valid:
+                    preview = normalized_audio[:200]
+                    preview_text = preview.decode('utf-8', errors='replace')
 
-                raise Exception(f"返回的音频数据不是有效MP3: {msg}; first16={debug.get('first16_hex')}")
+                    trimmed = normalized_audio.lstrip()
+                    if trimmed.startswith((b'{', b'[')):
+                        try:
+                            parsed = json.loads(trimmed.decode('utf-8'))
+                            raise Exception(f"上游返回JSON而非MP3: {parsed}")
+                        except Exception:
+                            pass
 
-            if debug.get('decompressed'):
+                    if trimmed.startswith(b'<'):
+                        raise Exception(f"上游返回HTML而非MP3，预览: {preview_text}")
+
+                    # 如果不是最后一次尝试，且错误可能由于网络问题引起，则重试
+                    if attempt < retry_count and "未检测到MP3同步帧" in msg:
+                        self.logger.warning(f"音频格式验证失败，将重试: {msg}")
+                        time.sleep(2)
+                        continue
+
+                    raise Exception(f"返回的音频数据不是有效MP3: {msg}; first16={debug.get('first16_hex')}; 响应预览: {preview_text[:100]}")
+
+                if debug.get('decompressed'):
+                    self.logger.info(
+                        f"检测到gzip压缩内容并已解压: {debug.get('original_len')} -> {debug.get('normalized_len')} 字节"
+                    )
+
+                if debug.get('trimmed_offset'):
+                    self.logger.warning(
+                        f"MP3同步帧不在开头，已自动裁剪前置数据: offset={debug.get('trimmed_offset')}"
+                    )
+
                 self.logger.info(
-                    f"检测到gzip压缩内容并已解压: {debug.get('original_len')} -> {debug.get('normalized_len')} 字节"
+                    f"音频生成成功 - 数据大小: {len(normalized_audio)} 字节; 校验: {msg}; first16={debug.get('first16_hex')}; 总耗时: {duration:.2f}秒"
                 )
-
-            if debug.get('trimmed_offset'):
-                self.logger.warning(
-                    f"MP3同步帧不在开头，已自动裁剪前置数据: offset={debug.get('trimmed_offset')}"
-                )
-
-            self.logger.info(
-                f"音频生成成功 - 数据大小: {len(normalized_audio)} 字节; 校验: {msg}; first16={debug.get('first16_hex')}"
-            )
-            return normalized_audio
-            
-        except Exception as e:
-            self.logger.error(f"获取音频失败: {str(e)}", exc_info=True)
-            raise
+                return normalized_audio
+                
+            except Exception as e:
+                self.logger.error(f"获取音频失败 (尝试 {attempt + 1}): {str(e)}", exc_info=True)
+                
+                # 如果是最后一次尝试，或者错误不太可能通过重试解决，则抛出异常
+                if attempt == retry_count or "不支持的声音模型" in str(e) or "文本不能为空" in str(e):
+                    raise
+                else:
+                    # 网络错误或其他可能的问题，等待后重试
+                    wait_time = 2 * (attempt + 1)  # 指数退避
+                    self.logger.info(f"将在{wait_time}秒后重试...")
+                    time.sleep(wait_time)
+        
+        # 理论上不应该到达这里
+        raise Exception("所有重试尝试均失败")

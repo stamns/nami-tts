@@ -13,6 +13,7 @@
   ],
   "env": {
     "PYTHONUNBUFFERED": "1",
+    "CACHE_DIR": "/tmp/cache",
     "TIME_SYNC_ENABLED": "true",
     "TIME_DRIFT_THRESHOLD_SECONDS": "30",
     "TIME_SYNC_INTERVAL_SECONDS": "300",

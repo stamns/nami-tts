@@ -11,6 +11,13 @@ from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 import random
 import time
+import io
+import concurrent.futures
+
+try:
+    from pydub import AudioSegment
+except ImportError:
+    AudioSegment = None
 
 
 def _find_mp3_sync_offset(data: bytes, max_scan: int = 4096) -> Optional[int]:
@@ -716,7 +723,103 @@ class NanoAITTS:
         except Exception:
             return False
     
-    def get_audio(self, text, voice='DeepSeek', timeout=60, retry_count=2):
+    def split_text(self, text, max_chars=500):
+        """
+        智能分割文本，尽量在标点处分割
+        """
+        if len(text) <= max_chars:
+            return [text]
+        
+        chunks = []
+        separators = ['。', '！', '？', '；', '\n', '.', '!', '?', ';']
+        
+        i = 0
+        while i < len(text):
+            if i + max_chars >= len(text):
+                chunks.append(text[i:])
+                break
+            
+            split_pos = -1
+            search_end = min(i + max_chars, len(text))
+            
+            for j in range(search_end - 1, i + max_chars // 2, -1):
+                if text[j] in separators:
+                    split_pos = j + 1
+                    break
+            
+            if split_pos == -1:
+                split_pos = i + max_chars
+            
+            chunks.append(text[i:split_pos])
+            i = split_pos
+        
+        return chunks
+    
+    def merge_audio_files(self, audio_data_list):
+        """
+        合并多个音频文件数据 (bytes)
+        """
+        if not audio_data_list:
+            return b""
+        
+        if len(audio_data_list) == 1:
+            return audio_data_list[0]
+        
+        if AudioSegment is None:
+            self.logger.warning("pydub 未安装，无法智能合并音频，将使用直接拼接（可能会有杂音）")
+            return b"".join(audio_data_list)
+        
+        try:
+            combined = AudioSegment.empty()
+            for data in audio_data_list:
+                if not data:
+                    continue
+                segment = AudioSegment.from_mp3(io.BytesIO(data))
+                combined += segment
+            
+            output = io.BytesIO()
+            combined.export(output, format="mp3")
+            return output.getvalue()
+        except Exception as e:
+            self.logger.error(f"合并音频失败: {str(e)}，尝试直接拼接", exc_info=True)
+            return b"".join(audio_data_list)
+    
+    def process_long_text(self, text, voice, speed, pitch, volume, language, gender, timeout, retry_count):
+        """处理长文本：分割、生成、合并"""
+        chunks = self.split_text(text, max_chars=500)
+        self.logger.info(f"文本过长({len(text)}字符)，已分割为 {len(chunks)} 个片段处理")
+        
+        max_workers = 3
+        audio_segments = [None] * len(chunks)
+        
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_index = {
+                    executor.submit(
+                        self.get_audio,
+                        chunk, voice, speed, pitch, volume, language, gender, timeout, retry_count
+                    ): i
+                    for i, chunk in enumerate(chunks)
+                }
+                
+                for future in concurrent.futures.as_completed(future_to_index):
+                    i = future_to_index[future]
+                    try:
+                        data = future.result()
+                        audio_segments[i] = data
+                        self.logger.info(f"片段 {i+1}/{len(chunks)} 处理完成")
+                    except Exception as e:
+                        self.logger.error(f"片段 {i+1} 处理失败: {str(e)}")
+                        raise
+                
+            self.logger.info(f"所有片段处理完成，正在合并...")
+            return self.merge_audio_files(audio_segments)
+        
+        except Exception as e:
+            self.logger.error(f"处理长文本失败: {str(e)}", exc_info=True)
+            raise
+    
+    def get_audio(self, text, voice='DeepSeek', speed=1.0, pitch=1.0, volume=1.0, language=None, gender=None, timeout=60, retry_count=2):
         """获取音频"""
         if not text or not text.strip():
             raise ValueError("文本不能为空")
@@ -724,16 +827,33 @@ class NanoAITTS:
         if voice not in self.voices:
             raise ValueError(f"不支持的声音模型: {voice}")
 
+        # 检查是否需要分割文本
+        max_chars = 500
+        if len(text) > max_chars:
+            return self.process_long_text(text, voice, speed, pitch, volume, language, gender, timeout, retry_count)
+
         url = f'https://bot.n.cn/api/tts/v1?roleid={voice}'
 
-        # 限制文本长度，避免请求过大
-        max_length = 1000
-        original_length = len(text)
-        if len(text) > max_length:
-            self.logger.warning(f"文本长度超过限制({max_length})，将被截断: {original_length} -> {max_length}")
-            text = text[:max_length]
+        # 构建 form_data
+        params = [
+            f'text={urllib.parse.quote(text)}',
+            'audio_type=mp3',
+            'format=stream'
+        ]
 
-        form_data = f'&text={urllib.parse.quote(text)}&audio_type=mp3&format=stream'
+        # 添加新参数
+        if speed != 1.0:
+            params.append(f'speed={speed}')
+        if pitch != 1.0:
+            params.append(f'pitch={pitch}')
+        if volume != 1.0:
+            params.append(f'volume={volume}')
+        if language:
+            params.append(f'language={language}')
+        if gender:
+            params.append(f'gender={gender}')
+
+        form_data = '&' + '&'.join(params)
 
         for attempt in range(retry_count + 1):
             try:

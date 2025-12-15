@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import os
 import time
+import json
+import base64
+import hmac
+import hashlib
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -22,6 +26,72 @@ PORT = int(os.getenv("PORT") or 5001)
 DEBUG = (os.getenv("DEBUG") or "False").lower() == "true"
 
 SERVICE_API_KEY = os.getenv("SERVICE_API_KEY") or os.getenv("TTS_API_KEY") or "sk-nanoai-your-secret-key"
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+UI_CONFIG_FILE = PROJECT_ROOT / ".ui_config.json"
+UI_CONFIG_SECRET = os.getenv("UI_CONFIG_SECRET") or SERVICE_API_KEY
+
+
+def _xor_bytes(data: bytes, key: bytes) -> bytes:
+    if not key:
+        raise ValueError("encryption key is empty")
+    return bytes(b ^ key[i % len(key)] for i, b in enumerate(data))
+
+
+def _ui_config_key_bytes() -> bytes:
+    return hashlib.sha256(UI_CONFIG_SECRET.encode("utf-8")).digest()
+
+
+def encrypt_ui_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    key = _ui_config_key_bytes()
+    plaintext = json.dumps(config, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    mac = hmac.new(key, plaintext, hashlib.sha256).hexdigest()
+    cipher = _xor_bytes(plaintext, key)
+    return {
+        "v": 1,
+        "alg": "xor+sha256-hmac",
+        "mac": mac,
+        "data": base64.urlsafe_b64encode(cipher).decode("ascii"),
+    }
+
+
+def decrypt_ui_config(encrypted: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(encrypted, dict) or encrypted.get("v") != 1:
+        raise ValueError("unsupported config format")
+
+    key = _ui_config_key_bytes()
+    cipher_b64 = encrypted.get("data")
+    if not isinstance(cipher_b64, str) or not cipher_b64:
+        raise ValueError("missing encrypted data")
+
+    cipher = base64.urlsafe_b64decode(cipher_b64.encode("ascii"))
+    plaintext = _xor_bytes(cipher, key)
+    expected_mac = hmac.new(key, plaintext, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected_mac, str(encrypted.get("mac") or "")):
+        raise ValueError("invalid config mac")
+
+    decoded = json.loads(plaintext.decode("utf-8"))
+    if not isinstance(decoded, dict):
+        raise ValueError("invalid config content")
+    return decoded
+
+
+def load_ui_config_from_disk() -> Optional[Dict[str, Any]]:
+    try:
+        if not UI_CONFIG_FILE.exists():
+            return None
+        with open(UI_CONFIG_FILE, "r", encoding="utf-8") as f:
+            encrypted = json.load(f)
+        return decrypt_ui_config(encrypted)
+    except Exception as e:
+        logger.warning("读取UI配置失败: %s", str(e))
+        return None
+
+
+def save_ui_config_to_disk(config: Dict[str, Any]) -> None:
+    encrypted = encrypt_ui_config(config)
+    with open(UI_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(encrypted, f, ensure_ascii=False, indent=2)
 
 
 _tts_manager = build_tts_manager()
@@ -48,7 +118,6 @@ def _require_auth() -> Optional[Any]:
     return None
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
 
@@ -367,6 +436,68 @@ def config_endpoint():
     _rebuild_tts_manager()
 
     return jsonify({"ok": True, "updated": updated})
+
+
+@app.route("/v1/ui/config", methods=["GET"])
+def ui_config_public():
+    """Public UI configuration endpoint"""
+    stored = UI_CONFIG_FILE.exists()
+
+    manager = _get_tts_manager()
+    provider_info = {}
+    for name, provider in manager.providers.items():
+        health = provider.health_check()
+        provider_info[name] = {
+            "name": name.capitalize(),
+            "available": health.ok,
+        }
+
+    return jsonify(
+        {
+            "server": {
+                "defaultBaseUrl": request.host_url.rstrip("/"),
+                "hasStoredConfig": stored,
+            },
+            "defaults": {
+                "provider": manager.default_provider,
+                "language": "auto",
+                "speed": 1.0,
+                "pitch": 1.0,
+                "volume": 1.0,
+                "format": "mp3",
+            },
+            "providers": provider_info,
+        }
+    )
+
+
+@app.route("/v1/ui/config/secure", methods=["GET", "PUT"])
+def ui_config_secure():
+    """Secure UI configuration endpoint (requires auth)"""
+    auth_resp = _require_auth()
+    if auth_resp:
+        return auth_resp
+
+    if request.method == "GET":
+        config = load_ui_config_from_disk() or {}
+        return jsonify({"config": config})
+
+    try:
+        payload = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify({"error": "Invalid JSON body"}), 400
+
+    config = payload.get("config")
+    if not isinstance(config, dict):
+        return jsonify({"error": "Missing or invalid field: config"}), 400
+
+    try:
+        save_ui_config_to_disk(config)
+    except Exception as e:
+        logger.error("保存UI配置失败: %s", str(e), exc_info=True)
+        return jsonify({"error": "Failed to save config", "details": str(e)}), 500
+
+    return jsonify({"ok": True})
 
 
 @app.route("/health", methods=["GET"])

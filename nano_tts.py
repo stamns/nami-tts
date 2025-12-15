@@ -103,13 +103,87 @@ class NanoAITTS:
         self.cache_dir = os.getenv('CACHE_DIR', 'cache')
         self.http_timeout = int(os.getenv('HTTP_TIMEOUT', '30'))
         self.retry_count = int(os.getenv('RETRY_COUNT', '2'))
-        self.proxy_url = os.getenv('PROXY_URL', '').strip()
+        
+        # 处理代理配置，增强验证逻辑
+        raw_proxy_url = os.getenv('PROXY_URL', '').strip()
+        self.proxy_url = self._validate_and_clean_proxy_url(raw_proxy_url)
         self.ssl_verify = os.getenv('SSL_VERIFY', 'true').lower() in ('true', '1', 'yes', 'on')
         
-        self.logger.info(f"TTS引擎配置: timeout={self.http_timeout}s, retry={self.retry_count}, proxy={bool(self.proxy_url)}, ssl_verify={self.ssl_verify}")
+        self.logger.info(f"TTS引擎配置: timeout={self.http_timeout}s, retry={self.retry_count}, proxy_enabled={bool(self.proxy_url)}, ssl_verify={self.ssl_verify}")
+        if self.proxy_url:
+            self.logger.info(f"代理配置: {self.proxy_url}")
+        else:
+            self.logger.info("代理配置: 未启用 (使用直连)")
         
         self._ensure_cache_dir()  # 确保缓存目录存在
         self.load_voices()
+    
+    def _validate_and_clean_proxy_url(self, raw_url: str) -> Optional[str]:
+        """
+        验证和清理代理URL
+        移除无效字符，检查URL格式，返回有效的代理URL或None
+        """
+        if not raw_url:
+            return None
+        
+        # 简单的字符串预处理
+        url = raw_url.strip()
+        
+        # 如果为空，返回None
+        if not url:
+            return None
+        
+        # 移除注释内容（从第一个 # 开始）
+        if '#' in url:
+            url = url.split('#')[0].strip()
+        
+        # 移除控制字符
+        url = ''.join(char for char in url if ord(char) >= 32 and char not in ['\t', '\n', '\r'])
+        
+        # 最终清理
+        url = url.strip()
+        
+        # 如果为空，返回None
+        if not url:
+            return None
+        
+        # 验证基本格式
+        if not url.startswith(('http://', 'https://')):
+            if '://' in url:
+                # 包含其他协议，不支持
+                self.logger.error(f"不支持的代理URL协议: {url}")
+                return None
+            else:
+                # 添加默认协议
+                url = 'http://' + url
+        
+        # 使用 urllib.parse 进行验证
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            
+            # 检查基本组件
+            if not parsed.scheme or not parsed.hostname:
+                self.logger.error(f"无效的代理URL: {url}")
+                return None
+            
+            # 检查端口
+            if parsed.port is not None:
+                if not isinstance(parsed.port, int) or not (1 <= parsed.port <= 65535):
+                    self.logger.error(f"无效的代理端口: {parsed.port}")
+                    return None
+            
+            # 重新构造清洁的URL
+            result = f"{parsed.scheme}://{parsed.hostname}"
+            if parsed.port:
+                result += f":{parsed.port}"
+            
+            self.logger.debug(f"代理URL验证成功: {result}")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"代理URL验证失败: {url}, 错误: {str(e)}")
+            return None
     
     def _ensure_cache_dir(self):
         """确保缓存目录存在"""

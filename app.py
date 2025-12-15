@@ -5,35 +5,91 @@ import threading
 import time
 import os
 import logging
+import gzip
+import hashlib
+from typing import Optional, Tuple, Dict, Any
 from dotenv import load_dotenv
-def validate_audio_data(audio_data):
-    """验证音频数据是否为有效的MP3格式（优化检测逻辑）"""
+
+
+def _find_mp3_sync_offset(data: bytes, max_scan: int = 4096) -> Optional[int]:
+    if not data or len(data) < 2:
+        return None
+
+    scan_len = min(len(data), max_scan)
+    for i in range(scan_len - 1):
+        if data[i] == 0xFF and (data[i + 1] & 0xE0) == 0xE0:
+            return i
+    return None
+
+
+def _parse_id3v2_tag_end(data: bytes) -> Optional[int]:
+    if len(data) < 10 or not data.startswith(b"ID3"):
+        return None
+
+    size_bytes = data[6:10]
+    if any(b & 0x80 for b in size_bytes):
+        return None
+
+    size = (size_bytes[0] << 21) | (size_bytes[1] << 14) | (size_bytes[2] << 7) | size_bytes[3]
+    return 10 + size
+
+
+def validate_and_normalize_mp3(audio_data: bytes) -> Tuple[bool, str, bytes, Dict[str, Any]]:
+    debug: Dict[str, Any] = {
+        "original_len": 0 if not audio_data else len(audio_data),
+        "decompressed": False,
+        "id3_present": False,
+        "id3_declared_end": None,
+        "first_sync_offset": None,
+        "trimmed_offset": None,
+        "normalized_len": 0,
+        "first16_hex": "" if not audio_data else audio_data[:16].hex(),
+        "sha256": "",
+    }
+
     if not audio_data:
-        return False, "音频数据为空"
-    # 允许极短音频（如测试用1字节数据），但实际场景应>100字节
-    if len(audio_data) < 1:
-        return False, "音频数据过短（长度<1字节）"
-    
-    # 检查MP3文件头（支持更多帧头格式）
-    # 1. ID3标签头（标准MP3元数据头）
-    if audio_data.startswith(b'ID3'):
-        return True, "有效的MP3文件(ID3标签)"
-    
-    # 2. MP3音频帧头（0xFF 后跟 0xC0-0xFF，涵盖所有标准帧头）
-    # 参考：https://en.wikipedia.org/wiki/MP3#File_structure
-    if len(audio_data) >= 2 and audio_data[0] == 0xff and (audio_data[1] & 0xe0) == 0xe0:
-        # 帧头格式：0xFF [1110xxxx]（第2字节高3位为111）
-        return True, "有效的MP3文件(标准音频帧头)"
-    
-    # 3. 检查前500字节是否包含MP3同步帧（放宽范围，支持延迟出现的帧头）
-    # 同步帧特征：0xFF 后跟 0xE0-0xFF（简化判断）
-    max_check_length = min(500, len(audio_data))  # 最多检查前500字节
-    for i in range(max_check_length - 1):
-        if audio_data[i] == 0xff and (audio_data[i+1] & 0xe0) == 0xe0:
-            return True, "有效的MP3文件(包含同步帧)"
-    
-    # 4. 作为最后的备选，接受任何非空音频数据（避免过度验证导致误判）
-    return True, "音频数据通过基础验证（未检测到标准MP3头，但非空）"
+        return False, "音频数据为空", b"", debug
+
+    if len(audio_data) >= 2 and audio_data[0] == 0x1F and audio_data[1] == 0x8B:
+        try:
+            audio_data = gzip.decompress(audio_data)
+            debug["decompressed"] = True
+            debug["first16_hex"] = audio_data[:16].hex()
+        except Exception:
+            pass
+
+    if audio_data.startswith(b"ID3"):
+        debug["id3_present"] = True
+        id3_end = _parse_id3v2_tag_end(audio_data)
+        debug["id3_declared_end"] = id3_end
+        if id3_end is not None and id3_end + 1 < len(audio_data):
+            if audio_data[id3_end] == 0xFF and (audio_data[id3_end + 1] & 0xE0) == 0xE0:
+                debug["first_sync_offset"] = id3_end
+                debug["normalized_len"] = len(audio_data)
+                debug["sha256"] = hashlib.sha256(audio_data).hexdigest()
+                return True, "有效的MP3文件(ID3标签)", audio_data, debug
+
+    sync_offset = _find_mp3_sync_offset(audio_data)
+    debug["first_sync_offset"] = sync_offset
+
+    if sync_offset is None:
+        debug["normalized_len"] = len(audio_data)
+        debug["sha256"] = hashlib.sha256(audio_data).hexdigest()
+        return False, "未检测到MP3同步帧", audio_data, debug
+
+    if sync_offset > 0:
+        audio_data = audio_data[sync_offset:]
+        debug["trimmed_offset"] = sync_offset
+        debug["first16_hex"] = audio_data[:16].hex()
+
+    debug["normalized_len"] = len(audio_data)
+    debug["sha256"] = hashlib.sha256(audio_data).hexdigest()
+    return True, "有效的MP3文件(包含同步帧)", audio_data, debug
+
+
+def validate_audio_data(audio_data: bytes) -> Tuple[bool, str]:
+    is_valid, msg, _, _ = validate_and_normalize_mp3(audio_data)
+    return is_valid, msg
 
 # 加载环境变量
 load_dotenv()
@@ -72,7 +128,17 @@ class ModelCache:
             return self._cache
 # --- 初始化 ---
 app = Flask(__name__)
-CORS(app)
+CORS(
+    app,
+    expose_headers=[
+        'Content-Type',
+        'Content-Length',
+        'Content-Disposition',
+        'X-Audio-Size',
+        'X-Audio-Validation',
+        'X-Audio-FirstFrameOffset',
+    ],
+)
 tts_engine = None
 model_cache = None
 try:
@@ -311,8 +377,39 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     try { const errorData = await response.json(); errorMsg = errorData.error || errorMsg; } catch (e) {}
                     throw new Error(errorMsg);
                 }
-                const audioBlob = await response.blob();
+                const contentTypeHeader = response.headers.get('Content-Type') || '';
+                const contentLengthHeader = response.headers.get('Content-Length') || '';
+                const contentEncodingHeader = response.headers.get('Content-Encoding') || '';
+                console.log('TTS响应头:', {
+                    contentType: contentTypeHeader,
+                    contentLength: contentLengthHeader,
+                    contentEncoding: contentEncodingHeader,
+                    audioValidation: response.headers.get('X-Audio-Validation') || '',
+                    audioSize: response.headers.get('X-Audio-Size') || '',
+                    audioFirstFrameOffset: response.headers.get('X-Audio-FirstFrameOffset') || ''
+                });
+
+                const audioArrayBuffer = await response.arrayBuffer();
+                const audioU8 = new Uint8Array(audioArrayBuffer);
+                const first16Hex = Array.from(audioU8.slice(0, 16))
+                    .map(b => b.toString(16).padStart(2, '0'))
+                    .join('');
+
+                console.log(`音频ArrayBuffer: ${audioArrayBuffer.byteLength} bytes, first16=${first16Hex}`);
+
+                if (contentLengthHeader) {
+                    const expected = Number(contentLengthHeader);
+                    if (!Number.isNaN(expected) && expected !== audioArrayBuffer.byteLength) {
+                        console.warn('Content-Length与实际长度不一致:', expected, audioArrayBuffer.byteLength);
+                    }
+                }
+
+                let blobType = contentTypeHeader.split(';')[0].trim();
+                if (!blobType || !blobType.startsWith('audio/')) blobType = 'audio/mpeg';
+
+                const audioBlob = new Blob([audioArrayBuffer], { type: blobType });
                 if (!audioBlob.type.startsWith('audio/')) console.warn('警告: 返回的数据可能不是音频格式:', audioBlob.type);
+
                 currentAudioBlob = audioBlob;
                 currentAudioUrl = (window.URL || window.webkitURL).createObjectURL(audioBlob);
                 const audioElement = document.getElementById('audio');
@@ -320,7 +417,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 audioElement.src = '';
                 audioElement.load();
                 audioElement.src = currentAudioUrl;
-                audioElement.onerror = () => showStatus('❌ 音频播放失败，请尝试下载后播放', 'error');
+                audioElement.onloadedmetadata = () => {
+                    console.log('音频metadata加载完成:', {
+                        duration: audioElement.duration,
+                        readyState: audioElement.readyState
+                    });
+                };
+
+                audioElement.onerror = (e) => {
+                    console.error('音频加载错误:', e, audioElement.error);
+                    showStatus('❌ 音频播放失败，请尝试下载后播放', 'error');
+                };
+
                 audioElement.load();
                 document.getElementById('audioPlayer').classList.add('show');
                 showStatus('✓ 语音生成成功！', 'success');
@@ -392,19 +500,120 @@ def create_speech():
     except Exception as e:
         current_app.logger.error(f"TTS引擎错误: {str(e)}", exc_info=True)
         return jsonify({"error": "TTS engine error", "details": str(e)}), 500
-    is_valid, validation_msg = validate_audio_data(audio_data)
+    is_valid, validation_msg, normalized_audio, debug = validate_and_normalize_mp3(audio_data)
     if not is_valid:
-        current_app.logger.error(f"音频无效: {validation_msg}")
-        return jsonify({"error": "Invalid audio data", "details": validation_msg}), 500
-    current_app.logger.info(f"音频验证成功: {validation_msg}")
-    return Response(
-        audio_data,
-        mimetype='audio/mpeg',
-        headers={
-            'Content-Disposition': 'inline; filename="speech.mp3"',
-            'Content-Length': str(len(audio_data))
+        current_app.logger.error(
+            f"音频无效: {validation_msg}; len={debug.get('original_len')}; first16={debug.get('first16_hex')}"
+        )
+        return (
+            jsonify(
+                {
+                    "error": "Invalid audio data",
+                    "details": validation_msg,
+                    "debug": {
+                        "len": debug.get("original_len"),
+                        "first16_hex": debug.get("first16_hex"),
+                        "sha256": debug.get("sha256"),
+                    },
+                }
+            ),
+            500,
+        )
+
+    audio_data = normalized_audio
+
+    current_app.logger.info(
+        "音频验证成功: %s; len=%s; first16=%s; first_sync_offset=%s; trimmed_offset=%s; decompressed=%s",
+        validation_msg,
+        len(audio_data),
+        debug.get('first16_hex'),
+        debug.get('first_sync_offset'),
+        debug.get('trimmed_offset'),
+        debug.get('decompressed'),
+    )
+
+    resp = Response(audio_data, mimetype='audio/mpeg')
+    resp.headers['Content-Disposition'] = 'inline; filename="speech.mp3"'
+    resp.headers['Content-Length'] = str(len(audio_data))
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    resp.headers['Accept-Ranges'] = 'bytes'
+
+    resp.headers['X-Audio-Size'] = str(len(audio_data))
+    resp.headers['X-Audio-Validation'] = validation_msg
+    resp.headers['X-Audio-FirstFrameOffset'] = str(
+        debug.get('trimmed_offset') or debug.get('first_sync_offset') or 0
+    )
+    resp.headers.pop('Content-Encoding', None)
+
+    current_app.logger.info(
+        "返回音频响应头: Content-Type=%s Content-Length=%s Cache-Control=%s",
+        resp.headers.get('Content-Type'),
+        resp.headers.get('Content-Length'),
+        resp.headers.get('Cache-Control'),
+    )
+
+    return resp
+
+
+@app.route('/v1/audio/diagnose', methods=['POST'])
+def diagnose_audio():
+    if not tts_engine:
+        return jsonify({"error": "TTS engine is not available due to initialization failure."}), 503
+
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return jsonify({"error": "Authorization header is missing or invalid"}), 401
+
+    provided_key = auth_header.split(' ')[1]
+    if provided_key != STATIC_API_KEY:
+        return jsonify({"error": "Invalid API Key"}), 401
+
+    try:
+        data = request.get_json()
+    except Exception:
+        return jsonify({"error": "Invalid JSON body"}), 400
+
+    model_id = data.get('model')
+    text_input = data.get('input')
+    if not model_id or not text_input:
+        return jsonify({"error": "Missing required fields: 'model' and 'input'"}), 400
+
+    available_models = model_cache.get_models()
+    if model_id not in available_models:
+        return jsonify({"error": f"Model '{model_id}' not found. Use /v1/models to see available models."}), 404
+
+    try:
+        audio_data = tts_engine.get_audio(text_input, voice=model_id)
+    except Exception as e:
+        return jsonify({"error": "TTS engine error", "details": str(e)}), 500
+
+    is_valid, validation_msg, normalized_audio, debug = validate_and_normalize_mp3(audio_data)
+
+    return jsonify(
+        {
+            "ok": is_valid,
+            "message": validation_msg,
+            "request": {
+                "model": model_id,
+                "text_len": len(text_input),
+            },
+            "audio": {
+                "len": len(audio_data) if audio_data else 0,
+                "normalized_len": len(normalized_audio) if normalized_audio else 0,
+                "first16_hex": debug.get("first16_hex"),
+                "first_sync_offset": debug.get("first_sync_offset"),
+                "trimmed_offset": debug.get("trimmed_offset"),
+                "id3_present": debug.get("id3_present"),
+                "id3_declared_end": debug.get("id3_declared_end"),
+                "decompressed": debug.get("decompressed"),
+                "sha256": debug.get("sha256"),
+            },
         }
     )
+
+
 @app.route('/v1/models', methods=['GET'])
 def list_models():
     if not model_cache:

@@ -14,86 +14,12 @@ import time
 import io
 import concurrent.futures
 
+from backend.utils.audio import validate_and_normalize_mp3
+
 try:
     from pydub import AudioSegment
 except ImportError:
     AudioSegment = None
-
-
-def _find_mp3_sync_offset(data: bytes, max_scan: int = 4096) -> Optional[int]:
-    if not data or len(data) < 2:
-        return None
-
-    scan_len = min(len(data), max_scan)
-    for i in range(scan_len - 1):
-        if data[i] == 0xFF and (data[i + 1] & 0xE0) == 0xE0:
-            return i
-    return None
-
-
-def _parse_id3v2_tag_size(data: bytes) -> Optional[int]:
-    if len(data) < 10 or not data.startswith(b"ID3"):
-        return None
-
-    # ID3v2 size is a 4-byte syncsafe integer at bytes 6..9
-    size_bytes = data[6:10]
-    if any(b & 0x80 for b in size_bytes):
-        return None
-
-    size = (size_bytes[0] << 21) | (size_bytes[1] << 14) | (size_bytes[2] << 7) | size_bytes[3]
-    return 10 + size
-
-
-def _validate_and_normalize_mp3(data: bytes) -> Tuple[bool, str, bytes, Dict[str, Any]]:
-    debug: Dict[str, Any] = {
-        "original_len": 0 if not data else len(data),
-        "decompressed": False,
-        "id3_present": False,
-        "id3_declared_end": None,
-        "first_sync_offset": None,
-        "trimmed_offset": None,
-        "normalized_len": 0,
-        "first16_hex": "" if not data else data[:16].hex(),
-    }
-
-    if not data:
-        return False, "音频数据为空", b"", debug
-
-    if len(data) >= 2 and data[0] == 0x1F and data[1] == 0x8B:
-        try:
-            decompressed = gzip.decompress(data)
-            debug["decompressed"] = True
-            data = decompressed
-            debug["first16_hex"] = data[:16].hex()
-        except Exception:
-            # 如果误判为gzip，直接继续后续校验
-            pass
-
-    if data.startswith(b"ID3"):
-        debug["id3_present"] = True
-        id3_end = _parse_id3v2_tag_size(data)
-        debug["id3_declared_end"] = id3_end
-
-        if id3_end is not None and id3_end < len(data):
-            if data[id3_end] == 0xFF and (data[id3_end + 1] & 0xE0) == 0xE0:
-                debug["first_sync_offset"] = id3_end
-                debug["normalized_len"] = len(data)
-                return True, "有效的MP3文件(ID3标签)", data, debug
-
-    sync_offset = _find_mp3_sync_offset(data)
-    debug["first_sync_offset"] = sync_offset
-
-    if sync_offset is None:
-        debug["normalized_len"] = len(data)
-        return False, "未检测到MP3同步帧", data, debug
-
-    if sync_offset > 0:
-        data = data[sync_offset:]
-        debug["trimmed_offset"] = sync_offset
-        debug["first16_hex"] = data[:16].hex()
-
-    debug["normalized_len"] = len(data)
-    return True, "有效的MP3文件(包含同步帧)", data, debug
 
 
 class NanoAITTS:
@@ -972,7 +898,7 @@ class NanoAITTS:
                         self.logger.warning(f"收到JSON格式响应但无法解析: {first_16_hex}")
                         # 继续处理，可能是非标准JSON格式
 
-                is_valid, msg, normalized_audio, debug = _validate_and_normalize_mp3(audio_data)
+                is_valid, msg, normalized_audio, debug = validate_and_normalize_mp3(audio_data)
                 if not is_valid:
                     preview = normalized_audio[:200]
                     preview_text = preview.decode('utf-8', errors='replace')

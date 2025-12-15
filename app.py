@@ -243,6 +243,42 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 </div>
             </div>
             <div class="section">
+                <div class="section-title">🎛️ 语音参数设置</div>
+                <div class="form-group">
+                    <label>语速 (Speed): <span id="speedValue">1.0</span></label>
+                    <input type="range" id="speed" min="0.5" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('speedValue').textContent = this.value">
+                </div>
+                <div class="form-group">
+                    <label>音调 (Pitch): <span id="pitchValue">1.0</span></label>
+                    <input type="range" id="pitch" min="0.5" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('pitchValue').textContent = this.value">
+                </div>
+                <div class="form-group">
+                    <label>音量 (Volume): <span id="volumeValue">1.0</span></label>
+                    <input type="range" id="volume" min="0.1" max="1.0" step="0.1" value="1.0" oninput="document.getElementById('volumeValue').textContent = this.value">
+                </div>
+                <div class="form-group">
+                    <label>语言 (Language)</label>
+                    <select id="language">
+                        <option value="">自动检测</option>
+                        <option value="zh-CN">简体中文 (zh-CN)</option>
+                        <option value="zh-TW">繁体中文 (zh-TW)</option>
+                        <option value="en-US">英文 (en-US)</option>
+                        <option value="ja-JP">日语 (ja-JP)</option>
+                        <option value="ko-KR">韩语 (ko-KR)</option>
+                        <option value="es-ES">西班牙语 (es-ES)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>性别 (Gender)</label>
+                    <select id="gender">
+                        <option value="">默认</option>
+                        <option value="male">男声 (Male)</option>
+                        <option value="female">女声 (Female)</option>
+                        <option value="neutral">中性 (Neutral)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="section">
                 <div class="section-title">📝 输入文本</div>
                 <div class="form-group">
                     <textarea id="textInput" placeholder="请输入要转换为语音的文本..." oninput="updateCharCount()"></textarea>
@@ -286,10 +322,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         });
         function updateCharCount() {
             const text = document.getElementById('textInput').value;
-            const maxLength = 500;
+            // 移除 500 字限制
+            // const maxLength = 500;
             const currentLength = text.length;
-            document.getElementById('charCount').textContent = `字符数: ${currentLength}/${maxLength}`;
-            document.getElementById('generateBtn').disabled = currentLength > maxLength;
+            document.getElementById('charCount').textContent = `字符数: ${currentLength}`;
+            // document.getElementById('generateBtn').disabled = currentLength > maxLength;
         }
         function togglePasswordVisibility() {
             const apiKeyInput = document.getElementById('apiKey');
@@ -372,11 +409,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             cleanupAudioUrl();
             try {
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 30000);
+                const timeoutId = setTimeout(() => controller.abort(), 120000); // 增加超时时间到 120s
                 const response = await fetch(`${apiBase}/v1/audio/speech`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ model: selectedModel, input: textInput }),
+                    body: JSON.stringify({ 
+                        model: selectedModel, 
+                        input: textInput,
+                        speed: document.getElementById('speed').value,
+                        pitch: document.getElementById('pitch').value,
+                        volume: document.getElementById('volume').value,
+                        language: document.getElementById('language').value,
+                        gender: document.getElementById('gender').value
+                    }),
                     signal: controller.signal
                 });
                 clearTimeout(timeoutId);
@@ -670,6 +715,20 @@ def create_speech():
         return jsonify({"error": "Invalid JSON body"}), 400
     model_id = data.get('model')
     text_input = data.get('input')
+    
+    # 提取新参数
+    try:
+        speed = float(data.get('speed', 1.0))
+        pitch = float(data.get('pitch', 1.0))
+        volume = float(data.get('volume', 1.0))
+    except ValueError:
+        speed = 1.0
+        pitch = 1.0
+        volume = 1.0
+        
+    language = data.get('language')
+    gender = data.get('gender')
+    
     if not model_id or not text_input:
         logger.warning("缺少必填字段: 'model'或'input'")
         return jsonify({"error": "Missing required fields: 'model' and 'input'"}), 400
@@ -684,15 +743,26 @@ def create_speech():
         time_status = None
 
     logger.info(
-        "语音合成请求: model='%s', input='%s...', local_epoch=%.3f, time_sync=%s",
+        "语音合成请求: model='%s', input_len=%d, speed=%.1f, pitch=%.1f, vol=%.1f, lang=%s, gender=%s",
         model_id,
-        text_input[:30],
-        request_received_at,
-        time_status,
+        len(text_input),
+        speed,
+        pitch,
+        volume,
+        language,
+        gender
     )
 
     try:
-        audio_data = tts_engine.get_audio(text_input, voice=model_id)
+        audio_data = tts_engine.get_audio(
+            text_input, 
+            voice=model_id,
+            speed=speed,
+            pitch=pitch,
+            volume=volume,
+            language=language,
+            gender=gender
+        )
         last_time_info = tts_engine.get_last_request_time_info()
         if last_time_info:
             current_app.logger.info("上游时间诊断: %s", last_time_info)

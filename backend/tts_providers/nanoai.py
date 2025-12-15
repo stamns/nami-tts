@@ -24,7 +24,22 @@ class NanoAIProvider(TTSProvider):
     def generate_audio(self, text: str, model: str, **options: Any) -> bytes:
         timeout = int(options.get("timeout") or self._engine.http_timeout or 60)
         retry_count = int(options.get("retry_count") or self._engine.retry_count or 2)
-        return self._engine.get_audio(text, voice=model, timeout=timeout, retry_count=retry_count)
+        speed = float(options.get("speed") or 1.0)
+        pitch = float(options.get("pitch") or 1.0)
+        volume = float(options.get("volume") or 1.0)
+        language = options.get("language")
+        gender = options.get("gender")
+        return self._engine.get_audio(
+            text,
+            voice=model,
+            speed=speed,
+            pitch=pitch,
+            volume=volume,
+            language=language,
+            gender=gender,
+            timeout=timeout,
+            retry_count=retry_count
+        )
 
     def health_check(self) -> ProviderHealth:
         try:

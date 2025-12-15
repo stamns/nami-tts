@@ -1,625 +1,2126 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>纳米AI TTS - OpenAI 兼容接口</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-        .container {
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            max-width: 800px;
-            width: 100%;
-            overflow: hidden;
-        }
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-        .header h1 {
-            font-size: 28px;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
-        .header p {
-            opacity: 0.9;
-            font-size: 14px;
-        }
-        .content {
-            padding: 30px;
-        }
-        .section {
-            margin-bottom: 25px;
-        }
-        .section-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        label {
-            display: block;
-            font-size: 14px;
-            color: #555;
-            margin-bottom: 8px;
-            font-weight: 500;
-        }
-        input[type="text"],
-        input[type="password"],
-        textarea,
-        select {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            font-size: 14px;
-            transition: all 0.3s;
-            font-family: inherit;
-        }
-        /* 密码框容器样式 */
-        .password-wrapper {
-            position: relative;
-            display: flex;
-            align-items: center;
-        }
-        .password-wrapper input {
-            padding-right: 45px;
-        }
-        .toggle-password {
-            position: absolute;
-            right: 12px;
-            cursor: pointer;
-            font-size: 20px;
-            user-select: none;
-            transition: opacity 0.2s;
-        }
-        .toggle-password:hover {
-            opacity: 0.7;
-        }
-        input:focus,
-        textarea:focus,
-        select:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-        textarea {
-            resize: vertical;
-            min-height: 120px;
-        }
-        .btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 14px 30px;
-            border-radius: 10px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
-        }
-        .btn:active {
-            transform: translateY(0);
-        }
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-        .btn-secondary {
-            background: #6c757d;
-            margin-top: 10px;
-        }
-        .status {
-            padding: 12px 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            display: none;
-            align-items: center;
-            gap: 10px;
-        }
-        .status.show {
-            display: flex;
-        }
-        .status.info {
-            background: #e3f2fd;
-            color: #1976d2;
-            border: 1px solid #90caf9;
-        }
-        .status.success {
-            background: #e8f5e9;
-            color: #388e3c;
-            border: 1px solid #81c784;
-        }
-        .status.error {
-            background: #ffebee;
-            color: #c62828;
-            border: 1px solid #e57373;
-        }
-        .models-list {
-            max-height: 300px;
-            overflow-y: auto;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            padding: 15px;
-        }
-        .model-item {
-            padding: 10px;
-            margin-bottom: 8px;
-            background: #f8f9fa;
-            border-radius: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .model-item:hover {
-            background: #e9ecef;
-            transform: translateX(5px);
-        }
-        .model-item.selected {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-        .model-id {
-            font-weight: 600;
-            font-size: 13px;
-        }
-        .model-name {
-            font-size: 12px;
-            opacity: 0.8;
-        }
-        .spinner {
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 3px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: white;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        .audio-player {
-            margin-top: 20px;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 10px;
-            display: none;
-        }
-        .audio-player.show {
-            display: block;
-        }
-        audio {
-            width: 100%;
-            margin-top: 10px;
-        }
-        .char-count {
-            text-align: right;
-            font-size: 12px;
-            color: #999;
-            margin-top: 5px;
-        }
-        .api-info {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 10px;
-            font-size: 13px;
-            line-height: 1.6;
-            color: #555;
-        }
-        .api-info code {
-            background: #e9ecef;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NanoAI TTS 控制台</title>
+  <style>
+    :root {
+      --bg1: #667eea;
+      --bg2: #764ba2;
+      --card: rgba(255, 255, 255, 0.98);
+      --border: rgba(0, 0, 0, 0.10);
+      --muted: rgba(0, 0, 0, 0.60);
+      --text: rgba(0, 0, 0, 0.88);
+      --danger: #c62828;
+      --ok: #2e7d32;
+      --info: #1565c0;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+      background: linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 100%);
+      min-height: 100vh;
+      color: var(--text);
+    }
+
+    .app {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+
+    .header {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.20);
+      backdrop-filter: blur(10px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 240px;
+    }
+
+    .logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.20);
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      font-weight: 800;
+      color: white;
+    }
+
+    .brand-title {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .brand-title strong {
+      color: white;
+      font-size: 16px;
+      letter-spacing: 0.5px;
+    }
+
+    .brand-title span {
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 12px;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      appearance: none;
+      border: none;
+      cursor: pointer;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-weight: 600;
+      color: white;
+      background: rgba(255, 255, 255, 0.20);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      transition: transform 0.15s ease, background 0.15s ease;
+      user-select: none;
+    }
+
+    .btn:hover { transform: translateY(-1px); background: rgba(255, 255, 255, 0.26); }
+    .btn:active { transform: translateY(0); }
+    .btn.primary { background: rgba(15, 23, 42, 0.85); border-color: rgba(255, 255, 255, 0.12); }
+    .btn.primary:hover { background: rgba(15, 23, 42, 0.92); }
+
+    .btn.ghost {
+      background: transparent;
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+
+    .btn.secondary {
+      background: rgba(0, 0, 0, 0.08);
+      color: rgba(0, 0, 0, 0.82);
+      border: 1px solid rgba(0, 0, 0, 0.10);
+    }
+
+    .btn.secondary:hover { background: rgba(0, 0, 0, 0.10); }
+
+    .btn.danger {
+      background: rgba(198, 40, 40, 0.9);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .main {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 16px;
+      margin-top: 16px;
+      align-items: start;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      box-shadow: 0 22px 55px rgba(0, 0, 0, 0.22);
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0.03), rgba(0, 0, 0, 0));
+    }
+
+    .card-header h2 {
+      margin: 0;
+      font-size: 14px;
+      letter-spacing: 0.2px;
+    }
+
+    .card-body { padding: 14px 16px; }
+
+    .status {
+      display: none;
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(0, 0, 0, 0.10);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .status.show { display: block; }
+    .status.info { background: rgba(21, 101, 192, 0.08); border-color: rgba(21, 101, 192, 0.25); color: var(--info); }
+    .status.ok { background: rgba(46, 125, 50, 0.08); border-color: rgba(46, 125, 50, 0.25); color: var(--ok); }
+    .status.err { background: rgba(198, 40, 40, 0.08); border-color: rgba(198, 40, 40, 0.25); color: var(--danger); }
+
+    textarea {
+      width: 100%;
+      min-height: 360px;
+      resize: vertical;
+      font-size: 14px;
+      line-height: 1.55;
+      padding: 12px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(0, 0, 0, 0.14);
+      outline: none;
+    }
+
+    textarea:focus {
+      border-color: rgba(102, 126, 234, 0.8);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.18);
+    }
+
+    .input-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .btn.small { padding: 8px 10px; border-radius: 10px; font-size: 12px; }
+
+    .file-btn {
+      position: relative;
+      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .file-btn input[type=file] {
+      position: absolute;
+      left: -9999px;
+      opacity: 0;
+    }
+
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .hint {
+      padding: 8px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.75);
+      background: rgba(0, 0, 0, 0.04);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      margin-top: 10px;
+      display: none;
+    }
+
+    .hint.show { display: block; }
+
+    .provider-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .provider-btn {
+      padding: 9px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      background: rgba(0, 0, 0, 0.02);
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.76);
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+
+    .provider-btn.active {
+      background: linear-gradient(135deg, var(--bg1), var(--bg2));
+      color: white;
+      border-color: rgba(0, 0, 0, 0);
+    }
+
+    .provider-btn.disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .field {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 10px;
+      align-items: center;
+      margin-top: 10px;
+    }
+
+    .field label {
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.70);
+      font-weight: 700;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    select {
+      width: 100%;
+      padding: 9px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(0, 0, 0, 0.14);
+      outline: none;
+      font-size: 13px;
+      background: white;
+    }
+
+    input:focus, select:focus {
+      border-color: rgba(102, 126, 234, 0.8);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.14);
+    }
+
+    .inline {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .range-row { margin-top: 10px; }
+
+    input[type=range] { width: 100%; }
+
+    .range-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.65);
+      margin-top: 6px;
+    }
+
+    .progress-wrap {
+      margin-top: 10px;
+      display: none;
+    }
+
+    .progress-wrap.show { display: block; }
+
+    .progress {
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.08);
+      overflow: hidden;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+    }
+
+    .progress > div {
+      height: 100%;
+      width: 0;
+      background: linear-gradient(135deg, var(--bg1), var(--bg2));
+      transition: width 0.15s ease;
+    }
+
+    .progress-meta {
+      margin-top: 8px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.65);
+    }
+
+    .audio-card {
+      margin-top: 16px;
+      display: none;
+    }
+
+    .audio-card.show { display: block; }
+
+    audio { width: 100%; margin-top: 10px; }
+
+    .output-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .output-actions .btn {
+      background: rgba(0, 0, 0, 0.06);
+      color: rgba(0, 0, 0, 0.82);
+      border: 1px solid rgba(0, 0, 0, 0.10);
+    }
+
+    .output-actions .btn:hover { background: rgba(0, 0, 0, 0.09); }
+
+    .vu {
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.08);
+      overflow: hidden;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      margin-top: 10px;
+    }
+
+    .vu > div {
+      height: 100%;
+      width: 0;
+      background: linear-gradient(90deg, #00c853, #ffd600, #d50000);
+      transition: width 0.08s linear;
+    }
+
+    .history {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .history-item {
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(0, 0, 0, 0.10);
+      background: rgba(0, 0, 0, 0.02);
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+
+    .history-item strong { font-size: 12px; }
+    .history-item .sub { font-size: 12px; color: rgba(0, 0, 0, 0.65); margin-top: 4px; }
+
+    .history-item .actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .icon-btn {
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      background: rgba(0, 0, 0, 0.02);
+      cursor: pointer;
+      border-radius: 10px;
+      padding: 6px 8px;
+      font-weight: 800;
+    }
+
+    .icon-btn.active {
+      background: rgba(255, 215, 0, 0.24);
+      border-color: rgba(255, 215, 0, 0.38);
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      display: none;
+      padding: 18px;
+      z-index: 1000;
+    }
+
+    .modal-backdrop.show { display: grid; place-items: center; }
+
+    .modal {
+      width: min(960px, 100%);
+      max-height: 86vh;
+      overflow: auto;
+      border-radius: 18px;
+      background: white;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      box-shadow: 0 35px 90px rgba(0, 0, 0, 0.40);
+    }
+
+    .modal-header {
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+      position: sticky;
+      top: 0;
+      background: white;
+      z-index: 10;
+    }
+
+    .modal-header h3 { margin: 0; font-size: 14px; }
+
+    .modal-body { padding: 14px 16px; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .section-title {
+      margin-top: 14px;
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.65);
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+    }
+
+    .divider { height: 1px; background: rgba(0, 0, 0, 0.08); margin: 14px 0; }
+
+    .modal-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+      justify-content: flex-end;
+    }
+
+    .modal-actions .btn {
+      background: rgba(15, 23, 42, 0.86);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .modal-actions .btn.secondary { background: rgba(0, 0, 0, 0.08); color: rgba(0, 0, 0, 0.80); border-color: rgba(0, 0, 0, 0.10); }
+
+    @media (max-width: 1024px) {
+      .main { grid-template-columns: 1fr; }
+      textarea { min-height: 320px; }
+    }
+
+    @media (max-width: 768px) {
+      .brand { min-width: auto; }
+      .field { grid-template-columns: 1fr; }
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🎙️ 纳米AI TTS</h1>
-            <p>OpenAI 兼容接口 - 本地语音合成服务</p>
+  <div class="app">
+    <header class="header">
+      <div class="brand">
+        <div class="logo">TTS</div>
+        <div class="brand-title">
+          <strong>NanoAI TTS</strong>
+          <span>长文本、分片生成、配置管理</span>
         </div>
-        <div class="content">
-            <!-- 状态提示 -->
-            <div id="status" class="status"></div>
-            <!-- 配置区域 -->
-            <div class="section">
-                <div class="section-title">⚙️ 服务配置</div>
-                <div class="form-group">
-                    <label>API 地址</label>
-                    <input type="text" id="apiBase" value="" placeholder="">
-                </div>
-                <div class="form-group">
-                    <label>API 密钥</label>
-                    <div class="password-wrapper">
-                        <input type="password" id="apiKey" value="sk-nanoai-your-secret-key" placeholder="sk-nanoai-your-secret-key">
-                        <span class="toggle-password" onclick="togglePasswordVisibility()" id="toggleIcon">👁️</span>
-                    </div>
-                </div>
-                <button class="btn btn-secondary" onclick="loadModels()">
-                    <span id="loadModelsIcon">🔄</span>
-                    <span>加载模型列表</span>
-                </button>
-            </div>
-            <!-- 模型选择 -->
-            <div class="section">
-                <div class="section-title">🎵 选择声音模型</div>
-                <div id="modelsList" class="models-list">
-                    <div style="text-align: center; color: #999; padding: 20px;">
-                        点击上方"加载模型列表"按钮获取可用声音
-                    </div>
-                </div>
-            </div>
-            <!-- 文本输入 -->
-            <div class="section">
-                <div class="section-title">📝 输入文本</div>
-                <div class="form-group">
-                    <textarea id="textInput" placeholder="请输入要转换为语音的文本..." oninput="updateCharCount()"></textarea>
-                    <div class="char-count" id="charCount">字符数: 0</div>
-                </div>
-            </div>
-            <!-- 生成按钮 -->
-            <button class="btn" id="generateBtn" onclick="generateSpeech()">
-                <span>🎵</span>
-                <span>生成语音</span>
-            </button>
-            <!-- 音频播放器 -->
-            <div id="audioPlayer" class="audio-player">
-                <div class="section-title">🔊 生成的语音</div>
-                <audio id="audio" controls preload="metadata"></audio>
-                <button class="btn btn-secondary" onclick="downloadAudio()" style="margin-top: 10px;">
-                    <span>💾</span>
-                    <span>下载音频</span>
-                </button>
-            </div>
-            <!-- API 信息 -->
-            <div class="section" style="margin-top: 30px;">
-                <div class="section-title">ℹ️ API 使用说明</div>
-                <div class="api-info">
-                    <p><strong>接口地址：</strong> <code>POST /v1/audio/speech</code></p>
-                    <p><strong>请求示例：</strong></p>
-                    <pre style="background: #e9ecef; padding: 10px; border-radius: 5px; margin-top: 5px; overflow-x: auto;">curl http://127.0.0.1:5001/v1/audio/speech \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "DeepSeek", "input": "测试文本"}' \
-  --output speech.mp3</pre>
-                </div>
-            </div>
+      </div>
+      <div class="header-actions">
+        <button class="btn" id="openConfigBtn" type="button">配置</button>
+        <button class="btn ghost" id="helpBtn" type="button">帮助</button>
+        <button class="btn ghost" id="aboutBtn" type="button">关于</button>
+      </div>
+    </header>
+
+    <div id="globalStatus" class="status"></div>
+
+    <main class="main">
+      <section class="card" id="inputCard">
+        <div class="card-header">
+          <h2>文本输入（支持 10000+ 字）</h2>
+          <div class="input-actions">
+            <button class="btn small" type="button" id="sampleBtn">示例</button>
+            <button class="btn small" type="button" id="clearBtn">清空</button>
+            <label class="btn small file-btn" for="fileInput">
+              上传 .txt
+              <input id="fileInput" type="file" accept=".txt,text/plain" />
+            </label>
+          </div>
         </div>
+        <div class="card-body">
+          <textarea id="textInput" placeholder="粘贴或输入文本；也可拖拽 .txt 文件到此区域"></textarea>
+          <div id="splitHint" class="hint"></div>
+          <div class="meta-row">
+            <div id="charCount">字符数：0</div>
+            <div id="segEstimate">预计分片：1</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="rightCard">
+        <div class="card-header">
+          <h2>参数 / 提供商 / 输出</h2>
+          <div class="inline" style="gap: 8px;">
+            <button class="btn small primary" type="button" id="generateBtn">生成</button>
+            <button class="btn small danger" type="button" id="cancelBtn" disabled>取消</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="section-title">API 选择</div>
+          <div class="provider-row" id="providerRow"></div>
+
+          <div class="field">
+            <label for="modelSelect">声音模型</label>
+            <div class="inline" style="gap: 8px;">
+              <select id="modelSelect"></select>
+              <button class="btn small" id="loadModelsBtn" type="button">加载</button>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="section-title">参数控制</div>
+
+          <div class="range-row">
+            <div class="inline"><strong style="font-size: 12px;">速度</strong><span id="speedVal" style="font-size: 12px; color: var(--muted);">1.0</span></div>
+            <input id="speedRange" type="range" min="0.5" max="2.0" step="0.1" value="1.0" />
+            <div class="range-label"><span>慢速</span><span>正常</span><span>快速</span></div>
+          </div>
+
+          <div class="range-row">
+            <div class="inline"><strong style="font-size: 12px;">音调（听感）</strong><span id="pitchVal" style="font-size: 12px; color: var(--muted);">1.0</span></div>
+            <input id="pitchRange" type="range" min="0.5" max="2.0" step="0.1" value="1.0" />
+            <div class="range-label"><span>低</span><span>正常</span><span>高</span></div>
+          </div>
+
+          <div class="range-row">
+            <div class="inline"><strong style="font-size: 12px;">音量</strong><span id="volumeVal" style="font-size: 12px; color: var(--muted);">1.0</span></div>
+            <input id="volumeRange" type="range" min="0.0" max="1.0" step="0.05" value="1.0" />
+            <div class="vu" aria-label="VU"><div id="vuBar"></div></div>
+          </div>
+
+          <div class="field">
+            <label for="langSelect">语言</label>
+            <select id="langSelect">
+              <option value="auto">自动检测</option>
+              <option value="zh">中文</option>
+              <option value="en">英文</option>
+              <option value="ja">日语</option>
+              <option value="ko">韩语</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>性别</label>
+            <div class="inline" style="gap: 10px; justify-content: flex-start; flex-wrap: wrap;">
+              <label style="font-size: 12px;"><input type="radio" name="gender" value="neutral" checked /> 中立</label>
+              <label style="font-size: 12px;"><input type="radio" name="gender" value="male" /> 男声</label>
+              <label style="font-size: 12px;"><input type="radio" name="gender" value="female" /> 女声</label>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="formatSelect">下载格式</label>
+            <select id="formatSelect">
+              <option value="mp3">MP3（默认）</option>
+              <option value="wav">WAV（本地转换）</option>
+              <option value="ogg" disabled>OGG（暂不支持）</option>
+            </select>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="section-title">生成进度</div>
+          <div id="progressWrap" class="progress-wrap">
+            <div class="progress"><div id="progressBar"></div></div>
+            <div class="progress-meta">
+              <div id="progressText">等待开始…</div>
+              <div id="timeText">已用：0s / 剩余：-</div>
+            </div>
+          </div>
+
+          <div id="audioCard" class="audio-card">
+            <div class="section-title">输出 / 播放</div>
+            <div id="audioMeta" class="hint show"></div>
+            <audio id="audio" controls preload="metadata"></audio>
+            <div class="output-actions">
+              <button class="btn" type="button" id="downloadBtn">下载</button>
+              <button class="btn" type="button" id="copyUrlBtn">复制音频 URL</button>
+              <button class="btn" type="button" id="shareBtn">分享</button>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="section-title">历史记录（最近 10 条）</div>
+          <div class="history" id="historyList"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="configBackdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>配置中心</h3>
+        <button class="btn secondary" type="button" id="closeConfigBtn">关闭</button>
+      </div>
+      <div class="modal-body">
+        <div class="section-title">服务器（本应用）</div>
+        <div class="grid-2">
+          <div>
+            <div class="field">
+              <label for="serverBaseUrl">API Base</label>
+              <input id="serverBaseUrl" type="text" placeholder="https://your-app.example.com" />
+            </div>
+          </div>
+          <div>
+            <div class="field">
+              <label for="serverApiKey">API Key</label>
+              <input id="serverApiKey" type="password" placeholder="sk-..." />
+            </div>
+          </div>
+        </div>
+        <div class="hint show" id="serverSyncHint">保存配置将写入 localStorage；如填写了服务器 API Key，可选择同步到服务器（加密存储）。</div>
+
+        <div class="divider"></div>
+
+        <div class="section-title">API 密钥管理（本地）</div>
+        <div class="grid-2">
+          <div class="card" style="box-shadow:none; border-radius: 14px;">
+            <div class="card-header"><h2>NanoAI（OpenAI 兼容）</h2></div>
+            <div class="card-body">
+              <div class="field">
+                <label for="nanoBaseUrl">Base URL</label>
+                <input id="nanoBaseUrl" type="text" placeholder="默认使用服务器 API Base" />
+              </div>
+              <div class="field">
+                <label for="nanoApiKey">API Key</label>
+                <input id="nanoApiKey" type="password" placeholder="留空则使用服务器 API Key" />
+              </div>
+              <div class="inline" style="margin-top: 10px;">
+                <button class="btn secondary" type="button" id="testNanoBtn">测试连接</button>
+                <span id="testNanoStatus" style="font-size: 12px; color: rgba(0,0,0,0.65);"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="box-shadow:none; border-radius: 14px;">
+            <div class="card-header"><h2>Google（OpenAI 兼容 Base 可选）</h2></div>
+            <div class="card-body">
+              <div class="field">
+                <label for="googleBaseUrl">Base URL</label>
+                <input id="googleBaseUrl" type="text" placeholder="如：https://xxx.example.com" />
+              </div>
+              <div class="field">
+                <label for="googleApiKey">API Key</label>
+                <input id="googleApiKey" type="password" placeholder="可选" />
+              </div>
+              <div class="inline" style="margin-top: 10px;">
+                <button class="btn secondary" type="button" id="testGoogleBtn">测试连接</button>
+                <span id="testGoogleStatus" style="font-size: 12px; color: rgba(0,0,0,0.65);"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="box-shadow:none; border-radius: 14px;">
+            <div class="card-header"><h2>微软 Azure（占位）</h2></div>
+            <div class="card-body">
+              <div class="field">
+                <label for="azureBaseUrl">Base URL</label>
+                <input id="azureBaseUrl" type="text" placeholder="如：https://xxx.example.com" />
+              </div>
+              <div class="field">
+                <label for="azureApiKey">API Key</label>
+                <input id="azureApiKey" type="password" placeholder="可选" />
+              </div>
+              <div class="field">
+                <label for="azureRegion">区域</label>
+                <input id="azureRegion" type="text" placeholder="如：eastus" />
+              </div>
+              <div class="inline" style="margin-top: 10px;">
+                <button class="btn secondary" type="button" id="testAzureBtn">测试连接</button>
+                <span id="testAzureStatus" style="font-size: 12px; color: rgba(0,0,0,0.65);"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="box-shadow:none; border-radius: 14px;">
+            <div class="card-header"><h2>百度（占位）</h2></div>
+            <div class="card-body">
+              <div class="field">
+                <label for="baiduBaseUrl">Base URL</label>
+                <input id="baiduBaseUrl" type="text" placeholder="如：https://xxx.example.com" />
+              </div>
+              <div class="field">
+                <label for="baiduAppId">App ID</label>
+                <input id="baiduAppId" type="text" placeholder="可选" />
+              </div>
+              <div class="field">
+                <label for="baiduApiKey">API Key</label>
+                <input id="baiduApiKey" type="password" placeholder="可选" />
+              </div>
+              <div class="field">
+                <label for="baiduSecretKey">Secret Key</label>
+                <input id="baiduSecretKey" type="password" placeholder="可选" />
+              </div>
+              <div class="inline" style="margin-top: 10px;">
+                <button class="btn secondary" type="button" id="testBaiduBtn">测试连接</button>
+                <span id="testBaiduStatus" style="font-size: 12px; color: rgba(0,0,0,0.65);"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="box-shadow:none; border-radius: 14px;">
+            <div class="card-header"><h2>阿里云（占位）</h2></div>
+            <div class="card-body">
+              <div class="field">
+                <label for="aliyunBaseUrl">Base URL</label>
+                <input id="aliyunBaseUrl" type="text" placeholder="如：https://xxx.example.com" />
+              </div>
+              <div class="field">
+                <label for="aliyunAccessKeyId">Access Key ID</label>
+                <input id="aliyunAccessKeyId" type="text" placeholder="可选" />
+              </div>
+              <div class="field">
+                <label for="aliyunAccessKeySecret">Access Key Secret</label>
+                <input id="aliyunAccessKeySecret" type="password" placeholder="可选" />
+              </div>
+              <div class="inline" style="margin-top: 10px;">
+                <button class="btn secondary" type="button" id="testAliyunBtn">测试连接</button>
+                <span id="testAliyunStatus" style="font-size: 12px; color: rgba(0,0,0,0.65);"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="section-title">默认配置</div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="defaultProvider">默认提供商</label>
+            <select id="defaultProvider"></select>
+          </div>
+          <div class="field">
+            <label for="defaultLang">默认语言</label>
+            <select id="defaultLang">
+              <option value="auto">自动检测</option>
+              <option value="zh">中文</option>
+              <option value="en">英文</option>
+              <option value="ja">日语</option>
+              <option value="ko">韩语</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="defaultSpeed">默认速度</label>
+            <input id="defaultSpeed" type="text" placeholder="1.0" />
+          </div>
+          <div class="field">
+            <label for="defaultGender">默认性别</label>
+            <select id="defaultGender">
+              <option value="neutral">中立</option>
+              <option value="male">男声</option>
+              <option value="female">女声</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <label style="display:flex; gap: 10px; align-items:center; font-size: 12px; color: rgba(0,0,0,0.70);">
+          <input id="syncToServer" type="checkbox" />
+          保存配置时同步到服务器（需要服务器 API Key）
+        </label>
+
+        <div class="modal-actions">
+          <button class="btn secondary" type="button" id="resetConfigBtn">恢复默认值</button>
+          <button class="btn secondary" type="button" id="loadServerConfigBtn">从服务器加载</button>
+          <button class="btn" type="button" id="saveConfigBtn">保存配置</button>
+        </div>
+
+        <div id="configStatus" class="status"></div>
+      </div>
     </div>
-    <script>
-        let selectedModel = null;
-        let currentAudioBlob = null;
-        let currentAudioUrl = null;
-        // 页面加载时自动填充API地址
-        window.addEventListener('load', () => {
-            const apiBaseInput = document.getElementById('apiBase');
-            if (!apiBaseInput.value) {
-                // 自动填充当前域名作为API地址
-                apiBaseInput.value = window.location.origin;
-            }
-            // 设置初始密码图标透明度
-            document.getElementById('toggleIcon').style.opacity = '0.6';
+  </div>
+
+  <script>
+    const UI_CONFIG_KEY = 'nano-tts.ui-config.v1';
+    const UI_HISTORY_KEY = 'nano-tts.history.v1';
+
+    const els = {
+      globalStatus: document.getElementById('globalStatus'),
+      textInput: document.getElementById('textInput'),
+      charCount: document.getElementById('charCount'),
+      segEstimate: document.getElementById('segEstimate'),
+      splitHint: document.getElementById('splitHint'),
+
+      providerRow: document.getElementById('providerRow'),
+      modelSelect: document.getElementById('modelSelect'),
+      loadModelsBtn: document.getElementById('loadModelsBtn'),
+
+      speedRange: document.getElementById('speedRange'),
+      speedVal: document.getElementById('speedVal'),
+      pitchRange: document.getElementById('pitchRange'),
+      pitchVal: document.getElementById('pitchVal'),
+      volumeRange: document.getElementById('volumeRange'),
+      volumeVal: document.getElementById('volumeVal'),
+      vuBar: document.getElementById('vuBar'),
+      langSelect: document.getElementById('langSelect'),
+      formatSelect: document.getElementById('formatSelect'),
+
+      generateBtn: document.getElementById('generateBtn'),
+      cancelBtn: document.getElementById('cancelBtn'),
+
+      progressWrap: document.getElementById('progressWrap'),
+      progressBar: document.getElementById('progressBar'),
+      progressText: document.getElementById('progressText'),
+      timeText: document.getElementById('timeText'),
+
+      audioCard: document.getElementById('audioCard'),
+      audio: document.getElementById('audio'),
+      audioMeta: document.getElementById('audioMeta'),
+      downloadBtn: document.getElementById('downloadBtn'),
+      copyUrlBtn: document.getElementById('copyUrlBtn'),
+      shareBtn: document.getElementById('shareBtn'),
+
+      historyList: document.getElementById('historyList'),
+
+      openConfigBtn: document.getElementById('openConfigBtn'),
+      helpBtn: document.getElementById('helpBtn'),
+      aboutBtn: document.getElementById('aboutBtn'),
+
+      configBackdrop: document.getElementById('configBackdrop'),
+      closeConfigBtn: document.getElementById('closeConfigBtn'),
+      configStatus: document.getElementById('configStatus'),
+
+      serverBaseUrl: document.getElementById('serverBaseUrl'),
+      serverApiKey: document.getElementById('serverApiKey'),
+
+      nanoBaseUrl: document.getElementById('nanoBaseUrl'),
+      nanoApiKey: document.getElementById('nanoApiKey'),
+      testNanoBtn: document.getElementById('testNanoBtn'),
+      testNanoStatus: document.getElementById('testNanoStatus'),
+
+      googleBaseUrl: document.getElementById('googleBaseUrl'),
+      googleApiKey: document.getElementById('googleApiKey'),
+      testGoogleBtn: document.getElementById('testGoogleBtn'),
+      testGoogleStatus: document.getElementById('testGoogleStatus'),
+
+      azureBaseUrl: document.getElementById('azureBaseUrl'),
+      azureApiKey: document.getElementById('azureApiKey'),
+      azureRegion: document.getElementById('azureRegion'),
+      testAzureBtn: document.getElementById('testAzureBtn'),
+      testAzureStatus: document.getElementById('testAzureStatus'),
+
+      baiduBaseUrl: document.getElementById('baiduBaseUrl'),
+      baiduAppId: document.getElementById('baiduAppId'),
+      baiduApiKey: document.getElementById('baiduApiKey'),
+      baiduSecretKey: document.getElementById('baiduSecretKey'),
+      testBaiduBtn: document.getElementById('testBaiduBtn'),
+      testBaiduStatus: document.getElementById('testBaiduStatus'),
+
+      aliyunBaseUrl: document.getElementById('aliyunBaseUrl'),
+      aliyunAccessKeyId: document.getElementById('aliyunAccessKeyId'),
+      aliyunAccessKeySecret: document.getElementById('aliyunAccessKeySecret'),
+      testAliyunBtn: document.getElementById('testAliyunBtn'),
+      testAliyunStatus: document.getElementById('testAliyunStatus'),
+
+      defaultProvider: document.getElementById('defaultProvider'),
+      defaultLang: document.getElementById('defaultLang'),
+      defaultSpeed: document.getElementById('defaultSpeed'),
+      defaultGender: document.getElementById('defaultGender'),
+      syncToServer: document.getElementById('syncToServer'),
+      resetConfigBtn: document.getElementById('resetConfigBtn'),
+      loadServerConfigBtn: document.getElementById('loadServerConfigBtn'),
+      saveConfigBtn: document.getElementById('saveConfigBtn'),
+
+      fileInput: document.getElementById('fileInput'),
+      sampleBtn: document.getElementById('sampleBtn'),
+      clearBtn: document.getElementById('clearBtn'),
+    };
+
+    const PROVIDERS = {
+      nanoai: { id: 'nanoai', name: 'NanoAI', openaiCompatible: true },
+      google: { id: 'google', name: 'Google' },
+      azure: { id: 'azure', name: '微软 Azure' },
+      baidu: { id: 'baidu', name: '百度' },
+      aliyun: { id: 'aliyun', name: '阿里云' },
+    };
+
+    const state = {
+      config: null,
+      activeProvider: 'nanoai',
+      modelsCache: new Map(),
+      generation: {
+        running: false,
+        abortController: null,
+        startedAt: 0,
+        segmentCount: 0,
+      },
+      audio: {
+        blob: null,
+        url: null,
+        bytes: 0,
+        segments: 0,
+        provider: null,
+        model: null,
+      },
+      audioGraph: {
+        ctx: null,
+        source: null,
+        gain: null,
+        analyser: null,
+        filter: null,
+        rafId: null,
+      },
+    };
+
+    function showStatus(message, type = 'info', target = els.globalStatus, autoHideMs = 5000) {
+      target.textContent = message;
+      target.className = `status ${type} show`;
+      if (autoHideMs && (type === 'ok' || type === 'err')) {
+        window.setTimeout(() => {
+          target.classList.remove('show');
+        }, autoHideMs);
+      }
+    }
+
+    function normalizeBaseUrl(url) {
+      const s = String(url || '').trim();
+      if (!s) return '';
+      return s.replace(/\/+$/, '');
+    }
+
+    function getDefaultConfig() {
+      return {
+        server: {
+          baseUrl: normalizeBaseUrl(window.location.origin),
+          apiKey: '',
+        },
+        providers: {
+          nanoai: { baseUrl: '', apiKey: '' },
+          google: { baseUrl: '', apiKey: '' },
+          azure: { baseUrl: '', apiKey: '', region: '' },
+          baidu: { baseUrl: '', appId: '', apiKey: '', secretKey: '' },
+          aliyun: { baseUrl: '', accessKeyId: '', accessKeySecret: '' },
+        },
+        defaults: {
+          provider: 'nanoai',
+          language: 'auto',
+          speed: 1.0,
+          pitch: 1.0,
+          volume: 1.0,
+          gender: 'neutral',
+          format: 'mp3',
+        },
+      };
+    }
+
+    function deepMerge(target, source) {
+      if (!source || typeof source !== 'object') return target;
+      const out = Array.isArray(target) ? target.slice() : { ...target };
+      for (const [k, v] of Object.entries(source)) {
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          out[k] = deepMerge(out[k] || {}, v);
+        } else {
+          out[k] = v;
+        }
+      }
+      return out;
+    }
+
+    async function loadServerDefaults() {
+      try {
+        const resp = await fetch('/v1/ui/config');
+        if (!resp.ok) return null;
+        return await resp.json();
+      } catch {
+        return null;
+      }
+    }
+
+    function loadLocalConfig() {
+      try {
+        const raw = localStorage.getItem(UI_CONFIG_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    }
+
+    function saveLocalConfig(config) {
+      localStorage.setItem(UI_CONFIG_KEY, JSON.stringify(config));
+    }
+
+    function setActiveProvider(providerId) {
+      state.activeProvider = providerId;
+      renderProviders();
+      updateDefaultProviderSelect();
+
+      if (state.modelsCache.has(providerId)) {
+        renderModels(providerId);
+      } else {
+        els.modelSelect.innerHTML = '';
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '请点击“加载”获取模型';
+        els.modelSelect.appendChild(opt);
+      }
+    }
+
+    function renderProviders() {
+      els.providerRow.innerHTML = '';
+      for (const provider of Object.values(PROVIDERS)) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'provider-btn';
+        btn.textContent = provider.name;
+
+        const configured = provider.id === 'nanoai' || Boolean(getProviderBaseUrl(provider.id));
+        if (!configured && provider.id !== 'nanoai') {
+          btn.classList.add('disabled');
+          btn.title = '请在配置中填写该提供商信息';
+        }
+
+        if (provider.id === state.activeProvider) btn.classList.add('active');
+
+        btn.addEventListener('click', () => {
+          if (btn.classList.contains('disabled')) {
+            showStatus('该提供商尚未配置，请先点击右上角“配置”填写信息。', 'info');
+            return;
+          }
+          setActiveProvider(provider.id);
         });
-        function updateCharCount() {
-            const text = document.getElementById('textInput').value;
-            const maxLength = 500; // 手机端优化：限制文本长度
-            const currentLength = text.length;
-            
-            document.getElementById('charCount').textContent = 
-                `字符数: ${currentLength}/${maxLength}`;
-            
-            // 超过限制时禁用生成按钮
-            document.getElementById('generateBtn').disabled = currentLength > maxLength;
+
+        els.providerRow.appendChild(btn);
+      }
+    }
+
+    function updateDefaultProviderSelect() {
+      els.defaultProvider.innerHTML = '';
+      for (const provider of Object.values(PROVIDERS)) {
+        const opt = document.createElement('option');
+        opt.value = provider.id;
+        opt.textContent = provider.name;
+        els.defaultProvider.appendChild(opt);
+      }
+      els.defaultProvider.value = state.config.defaults.provider || 'nanoai';
+    }
+
+    function getSelectedGender() {
+      const el = document.querySelector('input[name="gender"]:checked');
+      return el ? el.value : 'neutral';
+    }
+
+    function setSelectedGender(val) {
+      const el = document.querySelector(`input[name="gender"][value="${val}"]`);
+      if (el) el.checked = true;
+    }
+
+    function updateParamUi() {
+      els.speedVal.textContent = Number(els.speedRange.value).toFixed(1);
+      els.pitchVal.textContent = Number(els.pitchRange.value).toFixed(1);
+      els.volumeVal.textContent = Number(els.volumeRange.value).toFixed(2);
+
+      if (els.audio && !els.audio.paused) {
+        applyPlaybackParams();
+      }
+    }
+
+    function applyPlaybackParams() {
+      els.audio.playbackRate = Number(els.speedRange.value) || 1;
+      ensureAudioGraph();
+      if (state.audioGraph.gain) {
+        state.audioGraph.gain.gain.value = Number(els.volumeRange.value) || 1;
+      }
+
+      if (state.audioGraph.filter) {
+        const pitch = Number(els.pitchRange.value) || 1;
+        // 通过EQ“听感”模拟音调变化：低->变暗，高->变亮
+        const gainDb = Math.max(-12, Math.min(12, (pitch - 1) * 12));
+        state.audioGraph.filter.gain.value = gainDb;
+      }
+    }
+
+    function ensureAudioGraph() {
+      if (state.audioGraph.ctx) return;
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+
+      const ctx = new AudioContext();
+      const source = ctx.createMediaElementSource(els.audio);
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'highshelf';
+      filter.frequency.value = 2500;
+      filter.gain.value = 0;
+      const gain = ctx.createGain();
+      gain.gain.value = Number(els.volumeRange.value) || 1;
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+
+      source.connect(filter);
+      filter.connect(gain);
+      gain.connect(analyser);
+      analyser.connect(ctx.destination);
+
+      state.audioGraph = { ctx, source, gain, analyser, filter, rafId: null };
+
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) {
+          const v = (data[i] - 128) / 128;
+          sum += v * v;
         }
-        function togglePasswordVisibility() {
-            const apiKeyInput = document.getElementById('apiKey');
-            const toggleIcon = document.getElementById('toggleIcon');
-            
-            if (apiKeyInput.type === 'password') {
-                apiKeyInput.type = 'text';
-                toggleIcon.textContent = '🔓';
-                toggleIcon.style.opacity = '1';
-            } else {
-                apiKeyInput.type = 'password';
-                toggleIcon.textContent = '👁️';
-                toggleIcon.style.opacity = '0.6';
-            }
+        const rms = Math.sqrt(sum / data.length);
+        const pct = Math.min(1, rms * 2.2);
+        els.vuBar.style.width = `${Math.round(pct * 100)}%`;
+        state.audioGraph.rafId = requestAnimationFrame(tick);
+      };
+      state.audioGraph.rafId = requestAnimationFrame(tick);
+
+      els.audio.addEventListener('play', () => {
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+        applyPlaybackParams();
+      });
+    }
+
+    function cleanupAudioUrl() {
+      if (state.audio.url) {
+        try { URL.revokeObjectURL(state.audio.url); } catch {}
+      }
+      state.audio.url = null;
+    }
+
+    function setAudioBlob(blob, meta) {
+      cleanupAudioUrl();
+      state.audio.blob = blob;
+      state.audio.bytes = meta.bytes || blob.size || 0;
+      state.audio.segments = meta.segments || 1;
+      state.audio.provider = meta.provider;
+      state.audio.model = meta.model;
+
+      state.audio.url = URL.createObjectURL(blob);
+      els.audio.pause();
+      els.audio.src = '';
+      els.audio.load();
+      els.audio.src = state.audio.url;
+      els.audio.load();
+
+      els.audioMeta.textContent = `提供商：${meta.providerName}；模型：${meta.model}；分片：${state.audio.segments}；大小：${Math.round(state.audio.bytes / 1024)} KB`;
+      els.audioCard.classList.add('show');
+      applyPlaybackParams();
+    }
+
+    function updateTextMeta() {
+      const text = els.textInput.value || '';
+      const len = text.length;
+      els.charCount.textContent = `字符数：${len}`;
+      const estimate = Math.max(1, Math.ceil(len / 900));
+      els.segEstimate.textContent = `预计分片：${estimate}`;
+
+      if (len > 1000) {
+        els.splitHint.textContent = '文本过长，将自动分割为多个片段并逐段生成。';
+        els.splitHint.classList.add('show');
+      } else {
+        els.splitHint.classList.remove('show');
+      }
+    }
+
+    function detectLanguage(text) {
+      if (!text) return 'auto';
+      const sample = text.slice(0, 800);
+      if (/[\u3040-\u30ff]/.test(sample)) return 'ja';
+      if (/[\uac00-\ud7af]/.test(sample)) return 'ko';
+      if (/[\u4e00-\u9fff]/.test(sample)) return 'zh';
+      if (/[a-zA-Z]/.test(sample)) return 'en';
+      return 'auto';
+    }
+
+    function splitTextSmart(text, maxLen = 900) {
+      const cleaned = String(text || '').replace(/\r\n/g, '\n').trim();
+      if (!cleaned) return [];
+      if (cleaned.length <= maxLen) return [cleaned];
+
+      // 先按段落拆
+      const paragraphs = cleaned.split(/\n{2,}/g);
+      const chunks = [];
+
+      const pushChunk = (chunk) => {
+        const s = chunk.trim();
+        if (s) chunks.push(s);
+      };
+
+      for (const p of paragraphs) {
+        const para = p.trim();
+        if (!para) continue;
+
+        if (para.length <= maxLen) {
+          pushChunk(para);
+          continue;
         }
-        function showStatus(message, type = 'info') {
-            const status = document.getElementById('status');
-            status.textContent = message;
-            status.className = `status ${type} show`;
-            
-            if (type === 'success' || type === 'error') {
-                setTimeout(() => {
-                    status.classList.remove('show');
-                }, 5000);
-            }
+
+        // 再按句子拆
+        const sentences = para.match(/[^。！？!?；;\n]+[。！？!?；;\n]*/g) || [para];
+        let buf = '';
+        for (const s of sentences) {
+          const next = (buf + s).trim();
+          if (next.length <= maxLen) {
+            buf = next;
+            continue;
+          }
+          if (buf) pushChunk(buf);
+          buf = s.trim();
+
+          // 句子仍过长，硬切
+          while (buf.length > maxLen) {
+            pushChunk(buf.slice(0, maxLen));
+            buf = buf.slice(maxLen);
+          }
         }
-        async function loadModels() {
-            const apiBase = document.getElementById('apiBase').value;
-            const btn = event.target.closest('button');
-            const icon = document.getElementById('loadModelsIcon');
-            
-            if (!apiBase) {
-                showStatus('❌ 请先填写API地址', 'error');
-                return;
-            }
-            
-            btn.disabled = true;
-            icon.innerHTML = '<span class="spinner"></span>';
-            showStatus('正在加载模型列表...', 'info');
+        if (buf) pushChunk(buf);
+      }
+
+      return chunks;
+    }
+
+    function getProviderBaseUrl(providerId) {
+      if (!state.config) return '';
+      if (providerId === 'nanoai') {
+        const custom = normalizeBaseUrl(state.config.providers.nanoai.baseUrl);
+        return custom || normalizeBaseUrl(state.config.server.baseUrl) || normalizeBaseUrl(window.location.origin);
+      }
+
+      const p = state.config.providers?.[providerId] || {};
+      return normalizeBaseUrl(p.baseUrl || p.endpointUrl || '');
+    }
+
+    function getProviderApiKey(providerId) {
+      if (!state.config) return '';
+      if (providerId === 'nanoai') {
+        return (state.config.providers.nanoai.apiKey || state.config.server.apiKey || '').trim();
+      }
+
+      const p = state.config.providers?.[providerId] || {};
+      return String(p.apiKey || p.accessKeySecret || p.secretKey || '').trim();
+    }
+
+    async function loadModels() {
+      const providerId = state.activeProvider;
+      const baseUrl = getProviderBaseUrl(providerId);
+
+      if (!baseUrl) {
+        showStatus('缺少 Base URL，请先在配置中填写。', 'err');
+        return;
+      }
+
+      els.loadModelsBtn.disabled = true;
+      els.loadModelsBtn.textContent = '加载中…';
+      try {
+        const resp = await fetch(`${baseUrl}/v1/models`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        const models = (data.data || []).map((m) => ({ id: m.id, name: m.description || m.id }));
+        if (models.length === 0) throw new Error('未返回可用模型');
+
+        state.modelsCache.set(providerId, models);
+        renderModels(providerId);
+        showStatus(`模型加载成功：${models.length} 个`, 'ok');
+      } catch (e) {
+        showStatus(`模型加载失败：${e.message}`, 'err');
+      } finally {
+        els.loadModelsBtn.disabled = false;
+        els.loadModelsBtn.textContent = '加载';
+      }
+    }
+
+    function renderModels(providerId) {
+      const models = state.modelsCache.get(providerId) || [];
+      els.modelSelect.innerHTML = '';
+      for (const m of models) {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.name;
+        els.modelSelect.appendChild(opt);
+      }
+      if (models.length > 0) {
+        els.modelSelect.value = models[0].id;
+      }
+    }
+
+    function setGenerationUi(running) {
+      state.generation.running = running;
+      els.generateBtn.disabled = running;
+      els.cancelBtn.disabled = !running;
+      els.progressWrap.classList.toggle('show', running);
+      if (!running) {
+        els.progressBar.style.width = '0%';
+        els.progressText.textContent = '等待开始…';
+        els.timeText.textContent = '已用：0s / 剩余：-';
+      }
+    }
+
+    function updateProgress(i, total, startedAt, segmentName) {
+      const pct = total > 0 ? Math.round((i / total) * 100) : 0;
+      els.progressBar.style.width = `${pct}%`;
+      els.progressText.textContent = `生成进度：${pct}%（${i}/${total}） 当前片段：${segmentName}`;
+
+      const elapsed = Math.max(0, (Date.now() - startedAt) / 1000);
+      const avg = i > 0 ? elapsed / i : 0;
+      const remaining = avg > 0 ? Math.max(0, (total - i) * avg) : null;
+      els.timeText.textContent = `已用：${Math.round(elapsed)}s / 剩余：${remaining === null ? '-' : Math.round(remaining) + 's'}`;
+    }
+
+    function concatUint8(arrays) {
+      const total = arrays.reduce((sum, a) => sum + a.byteLength, 0);
+      const out = new Uint8Array(total);
+      let offset = 0;
+      for (const a of arrays) {
+        out.set(a, offset);
+        offset += a.byteLength;
+      }
+      return out;
+    }
+
+    async function generate() {
+      const text = (els.textInput.value || '').trim();
+      if (!text) {
+        showStatus('请输入文本。', 'err');
+        return;
+      }
+
+      const providerId = state.activeProvider;
+      const provider = PROVIDERS[providerId];
+      const baseUrl = getProviderBaseUrl(providerId);
+      if (!baseUrl) {
+        showStatus('缺少 Base URL，请先配置。', 'err');
+        return;
+      }
+
+      const model = els.modelSelect.value;
+      if (!model) {
+        showStatus('请先加载并选择声音模型。', 'err');
+        return;
+      }
+
+      const apiKey = getProviderApiKey(providerId);
+      if (!apiKey) {
+        showStatus('缺少 API Key，请在配置中填写。', 'err');
+        return;
+      }
+
+      const segments = splitTextSmart(text, 900);
+      if (segments.length === 0) {
+        showStatus('文本为空。', 'err');
+        return;
+      }
+
+      state.generation.abortController = new AbortController();
+      state.generation.startedAt = Date.now();
+      state.generation.segmentCount = segments.length;
+      setGenerationUi(true);
+
+      const buffers = [];
+      try {
+        for (let idx = 0; idx < segments.length; idx++) {
+          const seg = segments[idx];
+          updateProgress(idx, segments.length, state.generation.startedAt, '准备中…');
+
+          const reqBody = {
+            model,
+            input: seg,
+            speed: Number(els.speedRange.value) || 1,
+            pitch: Number(els.pitchRange.value) || 1,
+            volume: Number(els.volumeRange.value) || 1,
+            language: els.langSelect.value || 'auto',
+            gender: getSelectedGender(),
+          };
+
+          updateProgress(idx + 1, segments.length, state.generation.startedAt, `生成中（${seg.length}字）`);
+
+          const resp = await fetch(`${baseUrl}/v1/audio/speech`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(reqBody),
+            signal: state.generation.abortController.signal,
+          });
+
+          if (!resp.ok) {
+            let errText = `HTTP ${resp.status}`;
             try {
-                const response = await fetch(`${apiBase}/v1/models`);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                const data = await response.json();
-                const models = data.data || [];
-                if (models.length === 0) {
-                    throw new Error('未找到可用模型');
-                }
-                renderModels(models);
-                showStatus(`✓ 成功加载 ${models.length} 个模型`, 'success');
-            } catch (error) {
-                showStatus(`❌ 加载失败: ${error.message}`, 'error');
-                console.error('加载模型失败:', error);
-            } finally {
-                btn.disabled = false;
-                icon.textContent = '🔄';
-            }
+              const e = await resp.json();
+              errText = e.error || e.details || errText;
+            } catch {}
+            throw new Error(errText);
+          }
+
+          const ab = await resp.arrayBuffer();
+          buffers.push(new Uint8Array(ab));
         }
-        function renderModels(models) {
-            const container = document.getElementById('modelsList');
-            container.innerHTML = models.map(model => `
-                <div class="model-item" onclick="selectModel('${model.id}')">
-                    <div>
-                        <div class="model-id">${model.id}</div>
-                        <div class="model-name">${model.description || model.id}</div>
-                    </div>
-                    <div style="font-size: 20px;">🎤</div>
-                </div>
-            `).join('');
-        }
-        function selectModel(modelId) {
-            selectedModel = modelId;
-            document.querySelectorAll('.model-item').forEach(item => {
-                item.classList.remove('selected');
-            });
-            event.currentTarget.classList.add('selected');
-            showStatus(`✓ 已选择模型: ${modelId}`, 'success');
-        }
-        // 清理旧的音频URL
-        function cleanupAudioUrl() {
-            if (currentAudioUrl) {
-                try {
-                    URL.revokeObjectURL(currentAudioUrl);
-                } catch (e) {
-                    console.warn('清理音频URL失败:', e);
-                }
-                currentAudioUrl = null;
-            }
-        }
-        async function generateSpeech() {
-            const apiBase = document.getElementById('apiBase').value;
-            const apiKey = document.getElementById('apiKey').value;
-            const textInput = document.getElementById('textInput').value.trim();
-            const btn = document.getElementById('generateBtn');
-            if (!apiBase) {
-                showStatus('❌ 请先填写API地址', 'error');
-                return;
-            }
-            if (!selectedModel) {
-                showStatus('❌ 请先选择一个声音模型', 'error');
-                return;
-            }
-            if (!textInput) {
-                showStatus('❌ 请输入要转换的文本', 'error');
-                return;
-            }
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span><span>生成中...</span>';
-            showStatus('正在生成语音...', 'info');
-            // 清理旧的音频资源
-            cleanupAudioUrl();
-            try {
-                // 添加超时控制（手机端优化）
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
-                const response = await fetch(`${apiBase}/v1/audio/speech`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        model: selectedModel,
-                        input: textInput
-                    }),
-                    signal: controller.signal // 关联超时控制器
-                });
-                clearTimeout(timeoutId); // 清除超时
-                if (!response.ok) {
-                    let errorMsg = `HTTP ${response.status}`;
-                    try {
-                        const errorData = await response.json();
-                        errorMsg = errorData.error || errorMsg;
-                    } catch (e) {
-                        // 如果无法解析JSON错误，使用默认错误消息
-                    }
-                    throw new Error(errorMsg);
-                }
-                const contentTypeHeader = response.headers.get('Content-Type') || '';
-                const contentLengthHeader = response.headers.get('Content-Length') || '';
-                const contentEncodingHeader = response.headers.get('Content-Encoding') || '';
-                console.log('TTS响应头:', {
-                    contentType: contentTypeHeader,
-                    contentLength: contentLengthHeader,
-                    contentEncoding: contentEncodingHeader,
-                    audioValidation: response.headers.get('X-Audio-Validation') || '',
-                    audioSize: response.headers.get('X-Audio-Size') || '',
-                    audioFirstFrameOffset: response.headers.get('X-Audio-FirstFrameOffset') || ''
-                });
 
-                const audioArrayBuffer = await response.arrayBuffer();
-                const audioU8 = new Uint8Array(audioArrayBuffer);
-                const first16Hex = Array.from(audioU8.slice(0, 16))
-                    .map(b => b.toString(16).padStart(2, '0'))
-                    .join('');
-
-                console.log(`音频ArrayBuffer: ${audioArrayBuffer.byteLength} bytes, first16=${first16Hex}`);
-
-                if (contentLengthHeader) {
-                    const expected = Number(contentLengthHeader);
-                    if (!Number.isNaN(expected) && expected !== audioArrayBuffer.byteLength) {
-                        console.warn('Content-Length与实际长度不一致:', expected, audioArrayBuffer.byteLength);
-                    }
-                }
-
-                let blobType = contentTypeHeader.split(';')[0].trim();
-                if (!blobType || !blobType.startsWith('audio/')) blobType = 'audio/mpeg';
-
-                const audioBlob = new Blob([audioArrayBuffer], { type: blobType });
-                if (!audioBlob.type.startsWith('audio/')) {
-                    console.warn('警告: 返回的数据可能不是音频格式:', audioBlob.type);
-                }
-
-                currentAudioBlob = audioBlob;
-
-                // 创建Blob URL - 兼容老旧浏览器
-                try {
-                    currentAudioUrl = (window.URL || window.webkitURL).createObjectURL(audioBlob);
-                } catch (e) {
-                    throw new Error('浏览器不支持创建音频URL，请升级浏览器');
-                }
-                
-                const audioElement = document.getElementById('audio');
-                
-                // 清理旧的audio source
-                audioElement.pause();
-                audioElement.src = '';
-                audioElement.load();
-                
-                // 设置新的音频源
-                audioElement.src = currentAudioUrl;
-                
-                audioElement.onloadedmetadata = function() {
-                    console.log('音频metadata加载完成:', {
-                        duration: audioElement.duration,
-                        readyState: audioElement.readyState
-                    });
-                };
-
-                // 添加错误处理
-                audioElement.onerror = function(e) {
-                    console.error('音频加载错误:', e, audioElement.error);
-                    showStatus('❌ 音频播放失败，请尝试下载后播放', 'error');
-                };
-
-                // 确保音频可以播放
-                audioElement.load();
-                
-                document.getElementById('audioPlayer').classList.add('show');
-                showStatus('✓ 语音生成成功！', 'success');
-                
-                // 尝试自动播放（某些浏览器可能会阻止）
-                try {
-                    const playPromise = audioElement.play();
-                    if (playPromise !== undefined) {
-                        playPromise.catch(function(error) {
-                            console.warn('自动播放被阻止:', error);
-                            showStatus('✓ 语音已生成，请手动点击播放', 'success');
-                        });
-                    }
-                } catch (e) {
-                    console.warn('播放失败:', e);
-                }
-                
-            } catch (error) {
-                if (error.name === 'AbortError') {
-                    showStatus('❌ 请求超时，请缩短文本或检查网络', 'error');
-                } else {
-                    showStatus(`❌ 生成失败: ${error.message}`, 'error');
-                }
-                console.error('生成语音失败:', error);
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<span>🎵</span><span>生成语音</span>';
-            }
-        }
-        function downloadAudio() {
-            if (!currentAudioBlob) {
-                showStatus('❌ 没有可下载的音频', 'error');
-                return;
-            }
-            try {
-                const url = (window.URL || window.webkitURL).createObjectURL(currentAudioBlob);
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = url;
-                a.download = `nanoai_speech_${Date.now()}.mp3`;
-                document.body.appendChild(a);
-                a.click();
-                
-                // 延迟清理，确保下载开始
-                setTimeout(() => {
-                    document.body.removeChild(a);
-                    (window.URL || window.webkitURL).revokeObjectURL(url);
-                }, 100);
-                
-                showStatus('✓ 音频下载成功', 'success');
-            } catch (error) {
-                console.error('下载失败:', error);
-                showStatus('❌ 下载失败: ' + error.message, 'error');
-            }
-        }
-        // 页面卸载时清理资源
-        window.addEventListener('beforeunload', function() {
-            cleanupAudioUrl();
+        const out = concatUint8(buffers);
+        const blob = new Blob([out], { type: 'audio/mpeg' });
+        setAudioBlob(blob, {
+          bytes: out.byteLength,
+          segments: segments.length,
+          provider: providerId,
+          providerName: provider.name,
+          model,
         });
-    </script>
+
+        addHistory({
+          providerId,
+          providerName: provider.name,
+          model,
+          text,
+          textLen: text.length,
+          segments: segments.length,
+          bytes: out.byteLength,
+          createdAt: Date.now(),
+          params: {
+            speed: Number(els.speedRange.value) || 1,
+            pitch: Number(els.pitchRange.value) || 1,
+            volume: Number(els.volumeRange.value) || 1,
+            language: els.langSelect.value || 'auto',
+            gender: getSelectedGender(),
+          },
+        });
+
+        showStatus('生成成功。', 'ok');
+      } catch (e) {
+        if (e.name === 'AbortError') {
+          showStatus('已取消生成。', 'info');
+        } else {
+          showStatus(`生成失败：${e.message}`, 'err');
+        }
+      } finally {
+        setGenerationUi(false);
+        state.generation.abortController = null;
+      }
+    }
+
+    function cancelGeneration() {
+      if (state.generation.abortController) {
+        state.generation.abortController.abort();
+      }
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+    }
+
+    function audioBufferToWav(audioBuffer) {
+      const numCh = audioBuffer.numberOfChannels;
+      const sampleRate = audioBuffer.sampleRate;
+      const format = 1; // PCM
+      const bitDepth = 16;
+
+      const samples = audioBuffer.length;
+      const blockAlign = numCh * bitDepth / 8;
+      const byteRate = sampleRate * blockAlign;
+      const dataSize = samples * blockAlign;
+
+      const buffer = new ArrayBuffer(44 + dataSize);
+      const view = new DataView(buffer);
+
+      function writeString(offset, str) {
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+      }
+
+      writeString(0, 'RIFF');
+      view.setUint32(4, 36 + dataSize, true);
+      writeString(8, 'WAVE');
+      writeString(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, format, true);
+      view.setUint16(22, numCh, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, byteRate, true);
+      view.setUint16(32, blockAlign, true);
+      view.setUint16(34, bitDepth, true);
+      writeString(36, 'data');
+      view.setUint32(40, dataSize, true);
+
+      let offset = 44;
+      const channels = [];
+      for (let ch = 0; ch < numCh; ch++) channels.push(audioBuffer.getChannelData(ch));
+
+      for (let i = 0; i < samples; i++) {
+        for (let ch = 0; ch < numCh; ch++) {
+          let s = channels[ch][i];
+          s = Math.max(-1, Math.min(1, s));
+          view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+          offset += 2;
+        }
+      }
+
+      return new Blob([buffer], { type: 'audio/wav' });
+    }
+
+    async function convertMp3ToWav(mp3Blob) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) throw new Error('当前浏览器不支持音频转换');
+      const ctx = new AudioContext();
+      const ab = await mp3Blob.arrayBuffer();
+      const audioBuffer = await ctx.decodeAudioData(ab);
+      return audioBufferToWav(audioBuffer);
+    }
+
+    async function downloadCurrentAudio() {
+      if (!state.audio.blob) {
+        showStatus('没有可下载的音频。', 'err');
+        return;
+      }
+
+      const format = els.formatSelect.value;
+      const baseName = `tts_${Date.now()}`;
+
+      try {
+        if (format === 'mp3') {
+          downloadBlob(state.audio.blob, `${baseName}.mp3`);
+          showStatus('已下载 MP3。', 'ok');
+          return;
+        }
+
+        if (format === 'wav') {
+          showStatus('正在转换为 WAV…', 'info', els.globalStatus, 0);
+          const wavBlob = await convertMp3ToWav(state.audio.blob);
+          downloadBlob(wavBlob, `${baseName}.wav`);
+          showStatus('已下载 WAV。', 'ok');
+          return;
+        }
+
+        showStatus('该格式暂不支持。', 'err');
+      } catch (e) {
+        showStatus(`下载失败：${e.message}`, 'err');
+      }
+    }
+
+    async function copyAudioUrl() {
+      if (!state.audio.url) {
+        showStatus('暂无音频 URL。', 'err');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(state.audio.url);
+        showStatus('已复制（注意：blob URL 仅在本页面有效）。', 'ok');
+      } catch {
+        showStatus('复制失败（浏览器权限限制）。', 'err');
+      }
+    }
+
+    async function shareAudio() {
+      if (!state.audio.blob) {
+        showStatus('暂无可分享的音频。', 'err');
+        return;
+      }
+      if (!navigator.share) {
+        showStatus('当前浏览器不支持分享。', 'info');
+        return;
+      }
+      try {
+        const file = new File([state.audio.blob], 'speech.mp3', { type: 'audio/mpeg' });
+        await navigator.share({ title: 'TTS 音频', files: [file] });
+      } catch (e) {
+        showStatus(`分享失败：${e.message}`, 'err');
+      }
+    }
+
+    function loadHistory() {
+      try {
+        const raw = localStorage.getItem(UI_HISTORY_KEY);
+        if (!raw) return [];
+        const items = JSON.parse(raw);
+        return Array.isArray(items) ? items : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveHistory(items) {
+      localStorage.setItem(UI_HISTORY_KEY, JSON.stringify(items.slice(0, 10)));
+    }
+
+    function addHistory(item) {
+      const items = loadHistory();
+      const newItem = {
+        id: `${item.createdAt}_${Math.random().toString(16).slice(2)}`,
+        favorite: false,
+        ...item,
+        preview: item.text.slice(0, 40).replace(/\s+/g, ' '),
+      };
+      items.unshift(newItem);
+      saveHistory(items);
+      renderHistory();
+    }
+
+    function toggleFavorite(id) {
+      const items = loadHistory();
+      for (const it of items) {
+        if (it.id === id) {
+          it.favorite = !it.favorite;
+          break;
+        }
+      }
+      saveHistory(items);
+      renderHistory();
+    }
+
+    function reGenerateFromHistory(id) {
+      const items = loadHistory();
+      const it = items.find((x) => x.id === id);
+      if (!it) return;
+
+      els.textInput.value = it.text;
+      updateTextMeta();
+
+      if (it.providerId) setActiveProvider(it.providerId);
+      if (it.params) {
+        if (it.params.speed) els.speedRange.value = String(it.params.speed);
+        if (it.params.pitch) els.pitchRange.value = String(it.params.pitch);
+        if (it.params.volume) els.volumeRange.value = String(it.params.volume);
+        if (it.params.language) els.langSelect.value = it.params.language;
+        if (it.params.gender) setSelectedGender(it.params.gender);
+        updateParamUi();
+      }
+
+      // 尝试加载模型并选中
+      const models = state.modelsCache.get(it.providerId);
+      if (models && models.length) {
+        renderModels(it.providerId);
+        if (it.model) els.modelSelect.value = it.model;
+      } else {
+        loadModels().then(() => {
+          if (it.model) els.modelSelect.value = it.model;
+        });
+      }
+
+      generate();
+    }
+
+    function renderHistory() {
+      const items = loadHistory();
+      els.historyList.innerHTML = '';
+
+      if (items.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'hint show';
+        empty.textContent = '暂无历史记录。';
+        els.historyList.appendChild(empty);
+        return;
+      }
+
+      for (const it of items) {
+        const row = document.createElement('div');
+        row.className = 'history-item';
+        const left = document.createElement('div');
+        const when = new Date(it.createdAt).toLocaleString();
+        left.innerHTML = `<strong>${escapeHtml(it.preview || '')}</strong><div class="sub">${escapeHtml(it.providerName || it.providerId)} · ${escapeHtml(it.model || '')} · ${it.segments || 1}片 · ${Math.round((it.bytes || 0) / 1024)}KB · ${escapeHtml(when)}</div>`;
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+
+        const fav = document.createElement('button');
+        fav.className = 'icon-btn' + (it.favorite ? ' active' : '');
+        fav.type = 'button';
+        fav.textContent = '★';
+        fav.title = '收藏';
+        fav.addEventListener('click', () => toggleFavorite(it.id));
+
+        const regen = document.createElement('button');
+        regen.className = 'icon-btn';
+        regen.type = 'button';
+        regen.textContent = '↻';
+        regen.title = '重新生成';
+        regen.addEventListener('click', () => reGenerateFromHistory(it.id));
+
+        actions.appendChild(fav);
+        actions.appendChild(regen);
+        row.appendChild(left);
+        row.appendChild(actions);
+        els.historyList.appendChild(row);
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function openConfig() {
+      els.configBackdrop.classList.add('show');
+      els.configBackdrop.setAttribute('aria-hidden', 'false');
+      els.configStatus.className = 'status';
+      els.configStatus.textContent = '';
+      fillConfigModal();
+    }
+
+    function closeConfig() {
+      els.configBackdrop.classList.remove('show');
+      els.configBackdrop.setAttribute('aria-hidden', 'true');
+    }
+
+    function fillConfigModal() {
+      els.serverBaseUrl.value = state.config.server.baseUrl || normalizeBaseUrl(window.location.origin);
+      els.serverApiKey.value = state.config.server.apiKey || '';
+
+      els.nanoBaseUrl.value = state.config.providers.nanoai.baseUrl || '';
+      els.nanoApiKey.value = state.config.providers.nanoai.apiKey || '';
+
+      els.googleBaseUrl.value = state.config.providers.google.baseUrl || '';
+      els.googleApiKey.value = state.config.providers.google.apiKey || '';
+
+      els.azureBaseUrl.value = state.config.providers.azure.baseUrl || state.config.providers.azure.endpointUrl || '';
+      els.azureApiKey.value = state.config.providers.azure.apiKey || '';
+      els.azureRegion.value = state.config.providers.azure.region || '';
+
+      els.baiduBaseUrl.value = state.config.providers.baidu.baseUrl || '';
+      els.baiduAppId.value = state.config.providers.baidu.appId || '';
+      els.baiduApiKey.value = state.config.providers.baidu.apiKey || '';
+      els.baiduSecretKey.value = state.config.providers.baidu.secretKey || '';
+
+      els.aliyunBaseUrl.value = state.config.providers.aliyun.baseUrl || '';
+      els.aliyunAccessKeyId.value = state.config.providers.aliyun.accessKeyId || '';
+      els.aliyunAccessKeySecret.value = state.config.providers.aliyun.accessKeySecret || '';
+
+      updateDefaultProviderSelect();
+      els.defaultLang.value = state.config.defaults.language || 'auto';
+      els.defaultSpeed.value = String(state.config.defaults.speed ?? 1.0);
+      els.defaultGender.value = state.config.defaults.gender || 'neutral';
+    }
+
+    function applyDefaultsToUi() {
+      setActiveProvider(state.config.defaults.provider || 'nanoai');
+      els.langSelect.value = state.config.defaults.language || 'auto';
+      els.speedRange.value = String(state.config.defaults.speed ?? 1.0);
+      els.pitchRange.value = String(state.config.defaults.pitch ?? 1.0);
+      els.volumeRange.value = String(state.config.defaults.volume ?? 1.0);
+      setSelectedGender(state.config.defaults.gender || 'neutral');
+      els.formatSelect.value = state.config.defaults.format || 'mp3';
+      updateParamUi();
+    }
+
+    async function saveConfig() {
+      const next = deepMerge(getDefaultConfig(), state.config);
+
+      next.server.baseUrl = normalizeBaseUrl(els.serverBaseUrl.value);
+      next.server.apiKey = String(els.serverApiKey.value || '').trim();
+
+      next.providers.nanoai.baseUrl = normalizeBaseUrl(els.nanoBaseUrl.value);
+      next.providers.nanoai.apiKey = String(els.nanoApiKey.value || '').trim();
+
+      next.providers.google.baseUrl = normalizeBaseUrl(els.googleBaseUrl.value);
+      next.providers.google.apiKey = String(els.googleApiKey.value || '').trim();
+
+      next.providers.azure.baseUrl = normalizeBaseUrl(els.azureBaseUrl.value);
+      next.providers.azure.apiKey = String(els.azureApiKey.value || '').trim();
+      next.providers.azure.region = String(els.azureRegion.value || '').trim();
+
+      next.providers.baidu.baseUrl = normalizeBaseUrl(els.baiduBaseUrl.value);
+      next.providers.baidu.appId = String(els.baiduAppId.value || '').trim();
+      next.providers.baidu.apiKey = String(els.baiduApiKey.value || '').trim();
+      next.providers.baidu.secretKey = String(els.baiduSecretKey.value || '').trim();
+
+      next.providers.aliyun.baseUrl = normalizeBaseUrl(els.aliyunBaseUrl.value);
+      next.providers.aliyun.accessKeyId = String(els.aliyunAccessKeyId.value || '').trim();
+      next.providers.aliyun.accessKeySecret = String(els.aliyunAccessKeySecret.value || '').trim();
+
+      next.defaults.provider = els.defaultProvider.value || 'nanoai';
+      next.defaults.language = els.defaultLang.value || 'auto';
+      next.defaults.gender = els.defaultGender.value || 'neutral';
+
+      const speedNum = Number(els.defaultSpeed.value);
+      next.defaults.speed = Number.isFinite(speedNum) && speedNum > 0 ? speedNum : 1.0;
+
+      state.config = next;
+      saveLocalConfig(next);
+
+      renderProviders();
+      applyDefaultsToUi();
+
+      showStatus('配置已保存到本地。', 'ok', els.configStatus);
+
+      if (els.syncToServer.checked) {
+        await syncConfigToServer();
+      }
+    }
+
+    async function syncConfigToServer() {
+      const baseUrl = normalizeBaseUrl(state.config.server.baseUrl || window.location.origin);
+      const apiKey = String(state.config.server.apiKey || '').trim();
+      if (!apiKey) {
+        showStatus('同步到服务器需要填写服务器 API Key。', 'err', els.configStatus);
+        return;
+      }
+
+      try {
+        const resp = await fetch(`${baseUrl}/v1/ui/config/secure`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ config: state.config }),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        showStatus('已同步到服务器（加密存储）。', 'ok', els.configStatus);
+      } catch (e) {
+        showStatus(`服务器同步失败：${e.message}`, 'err', els.configStatus);
+      }
+    }
+
+    async function loadConfigFromServer() {
+      const baseUrl = normalizeBaseUrl(state.config.server.baseUrl || window.location.origin);
+      const apiKey = String(state.config.server.apiKey || '').trim();
+      if (!apiKey) {
+        showStatus('从服务器加载需要填写服务器 API Key。', 'err', els.configStatus);
+        return;
+      }
+
+      try {
+        const resp = await fetch(`${baseUrl}/v1/ui/config/secure`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+          },
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        const cfg = data && data.config;
+        if (!cfg || typeof cfg !== 'object') {
+          throw new Error('服务器未返回有效配置');
+        }
+
+        state.config = deepMerge(getDefaultConfig(), cfg);
+        saveLocalConfig(state.config);
+        fillConfigModal();
+        renderProviders();
+        applyDefaultsToUi();
+
+        showStatus('已从服务器加载配置。', 'ok', els.configStatus);
+      } catch (e) {
+        showStatus(`加载失败：${e.message}`, 'err', els.configStatus);
+      }
+    }
+
+    function resetConfig() {
+      state.config = getDefaultConfig();
+      saveLocalConfig(state.config);
+      fillConfigModal();
+      applyDefaultsToUi();
+      renderProviders();
+      showStatus('已恢复默认值。', 'ok', els.configStatus);
+    }
+
+    async function testProvider(providerId, statusEl) {
+      const baseUrl = getProviderBaseUrl(providerId);
+      if (!baseUrl) {
+        statusEl.textContent = '缺少 Base URL';
+        return;
+      }
+
+      statusEl.textContent = '测试中…';
+      try {
+        if (providerId === 'nanoai') {
+          const resp = await fetch(`${baseUrl}/health`);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const data = await resp.json();
+          statusEl.textContent = data.status === 'ok' ? '可用' : `状态：${data.status}`;
+          return;
+        }
+
+        const resp = await fetch(`${baseUrl}/v1/models`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        const count = Array.isArray(data.data) ? data.data.length : 0;
+        statusEl.textContent = count > 0 ? `可用（${count} 模型）` : '可用';
+      } catch (e) {
+        statusEl.textContent = `失败：${e.message}`;
+      }
+    }
+
+    function handleTxtFile(file) {
+      if (!file) return;
+      if (!/\.txt$/i.test(file.name)) {
+        showStatus('仅支持 .txt 文件。', 'err');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        showStatus('文件过大（限制 10MB）。', 'err');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        els.textInput.value = String(reader.result || '');
+        updateTextMeta();
+        showStatus('已导入文本文件。', 'ok');
+      };
+      reader.onerror = () => showStatus('读取文件失败。', 'err');
+      reader.readAsText(file, 'utf-8');
+    }
+
+    function initDragDrop() {
+      const el = els.textInput;
+      const onDragOver = (e) => {
+        e.preventDefault();
+        el.style.borderColor = 'rgba(102,126,234,0.9)';
+        el.style.boxShadow = '0 0 0 3px rgba(102,126,234,0.20)';
+      };
+      const onDragLeave = () => {
+        el.style.borderColor = 'rgba(0,0,0,0.14)';
+        el.style.boxShadow = 'none';
+      };
+      const onDrop = (e) => {
+        e.preventDefault();
+        onDragLeave();
+        const file = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file) handleTxtFile(file);
+      };
+      el.addEventListener('dragover', onDragOver);
+      el.addEventListener('dragleave', onDragLeave);
+      el.addEventListener('drop', onDrop);
+    }
+
+    function bindEvents() {
+      els.textInput.addEventListener('input', () => {
+        // 避免长文本输入时频繁做复杂计算，仅做轻量更新
+        requestAnimationFrame(updateTextMeta);
+      });
+
+      els.speedRange.addEventListener('input', () => { updateParamUi(); applyPlaybackParams(); });
+      els.pitchRange.addEventListener('input', () => { updateParamUi(); applyPlaybackParams(); });
+      els.volumeRange.addEventListener('input', () => { updateParamUi(); applyPlaybackParams(); });
+
+      els.loadModelsBtn.addEventListener('click', loadModels);
+      els.generateBtn.addEventListener('click', generate);
+      els.cancelBtn.addEventListener('click', cancelGeneration);
+      els.downloadBtn.addEventListener('click', downloadCurrentAudio);
+      els.copyUrlBtn.addEventListener('click', copyAudioUrl);
+      els.shareBtn.addEventListener('click', shareAudio);
+
+      els.openConfigBtn.addEventListener('click', openConfig);
+      els.closeConfigBtn.addEventListener('click', closeConfig);
+      els.configBackdrop.addEventListener('click', (e) => {
+        if (e.target === els.configBackdrop) closeConfig();
+      });
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && els.configBackdrop.classList.contains('show')) closeConfig();
+      });
+
+      els.resetConfigBtn.addEventListener('click', resetConfig);
+      els.loadServerConfigBtn.addEventListener('click', loadConfigFromServer);
+      els.saveConfigBtn.addEventListener('click', saveConfig);
+
+      els.testNanoBtn.addEventListener('click', () => testProvider('nanoai', els.testNanoStatus));
+      els.testGoogleBtn.addEventListener('click', () => testProvider('google', els.testGoogleStatus));
+      els.testAzureBtn.addEventListener('click', () => testProvider('azure', els.testAzureStatus));
+      els.testBaiduBtn.addEventListener('click', () => testProvider('baidu', els.testBaiduStatus));
+      els.testAliyunBtn.addEventListener('click', () => testProvider('aliyun', els.testAliyunStatus));
+
+      els.fileInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        handleTxtFile(file);
+        e.target.value = '';
+      });
+
+      els.sampleBtn.addEventListener('click', () => {
+        els.textInput.value = '这是一段示例长文本。\n\n当文本超过 1000 字时，系统会自动分割为多个片段逐段生成，并在右侧展示进度。\n\n你可以直接粘贴 10000+ 字内容，或拖拽上传 .txt 文件。';
+        updateTextMeta();
+        showStatus('已填充示例文本。', 'ok');
+      });
+
+      els.clearBtn.addEventListener('click', () => {
+        els.textInput.value = '';
+        updateTextMeta();
+      });
+
+      els.helpBtn.addEventListener('click', () => {
+        showStatus('提示：点击“配置”填写 API Base / API Key；文本过长会自动分片；下载可选 MP3 或本地转换为 WAV。', 'info');
+      });
+
+      els.aboutBtn.addEventListener('click', () => {
+        showStatus('NanoAI TTS 控制台：OpenAI 兼容接口前端。配置保存在 localStorage，可选同步到服务器（加密）。', 'info');
+      });
+
+      initDragDrop();
+
+      els.audio.addEventListener('loadedmetadata', applyPlaybackParams);
+    }
+
+    async function init() {
+      const defaults = getDefaultConfig();
+      const serverDefaults = await loadServerDefaults();
+
+      let merged = defaults;
+      if (serverDefaults && serverDefaults.server && serverDefaults.server.defaultBaseUrl) {
+        merged.server.baseUrl = normalizeBaseUrl(serverDefaults.server.defaultBaseUrl);
+      }
+      if (serverDefaults && serverDefaults.defaults) {
+        merged.defaults = deepMerge(merged.defaults, serverDefaults.defaults);
+      }
+
+      const local = loadLocalConfig();
+      if (local) merged = deepMerge(merged, local);
+
+      state.config = merged;
+      renderProviders();
+      updateDefaultProviderSelect();
+      applyDefaultsToUi();
+      updateTextMeta();
+      renderHistory();
+
+      // 初次自动语言建议
+      const detected = detectLanguage(els.textInput.value);
+      if (els.langSelect.value === 'auto' && detected !== 'auto') {
+        // 保持auto，但可用于后续扩展
+      }
+
+      // 自动尝试加载 NanoAI 模型
+      try {
+        setActiveProvider(state.config.defaults.provider || 'nanoai');
+        await loadModels();
+      } catch {}
+    }
+
+    bindEvents();
+    init();
+
+    window.addEventListener('beforeunload', () => {
+      cleanupAudioUrl();
+      if (state.audioGraph.rafId) cancelAnimationFrame(state.audioGraph.rafId);
+    });
+  </script>
 </body>
 </html>

@@ -108,7 +108,7 @@ class NanoAITTS:
         self.logger = logging.getLogger('NanoAITTS')  # 添加专用日志器
         
         # 加载配置
-        self.cache_dir = os.getenv('CACHE_DIR', 'cache')
+        self.cache_dir = os.getenv('CACHE_DIR', '/tmp/cache')
         self.http_timeout = int(os.getenv('HTTP_TIMEOUT', '30'))
         self.retry_count = int(os.getenv('RETRY_COUNT', '2'))
         
@@ -231,8 +231,12 @@ class NanoAITTS:
             if not os.path.exists(self.cache_dir):
                 os.makedirs(self.cache_dir, exist_ok=True)
                 self.logger.info(f"创建缓存目录: {self.cache_dir}")
+        except OSError as e:
+            self.logger.error(f"创建缓存目录失败: {str(e)} (path: {self.cache_dir}, errno: {e.errno})", exc_info=True)
+            if e.errno == 30:
+                self.logger.error("检测到文件系统只读错误，请确保使用可写目录（如 /tmp）")
         except Exception as e:
-            self.logger.error(f"创建缓存目录失败: {str(e)}", exc_info=True)
+            self.logger.error(f"创建缓存目录失败 (未预期的错误): {str(e)}", exc_info=True)
 
     def _get_opener(self) -> urllib.request.OpenerDirector:
         handlers = []

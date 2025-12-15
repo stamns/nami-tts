@@ -27,6 +27,9 @@ DEBUG = (os.getenv("DEBUG") or "False").lower() == "true"
 
 SERVICE_API_KEY = os.getenv("SERVICE_API_KEY") or os.getenv("TTS_API_KEY") or "sk-nanoai-your-secret-key"
 
+if not os.getenv("SERVICE_API_KEY") and not os.getenv("TTS_API_KEY"):
+    logger.warning("No API key configured! Using default key. Set SERVICE_API_KEY or TTS_API_KEY environment variable.")
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 UI_CONFIG_FILE = PROJECT_ROOT / ".ui_config.json"
 UI_CONFIG_SECRET = os.getenv("UI_CONFIG_SECRET") or SERVICE_API_KEY
@@ -109,10 +112,17 @@ def _rebuild_tts_manager() -> None:
 def _require_auth() -> Optional[Any]:
     auth_header = request.headers.get("Authorization") or ""
     if not auth_header.startswith("Bearer "):
+        logger.warning("Authentication failed: missing or invalid Authorization header format")
         return jsonify({"error": "Authorization header is missing or invalid"}), 401
 
-    provided_key = auth_header.split(" ", 1)[1]
+    parts = auth_header.split(" ", 1)
+    if len(parts) < 2 or not parts[1]:
+        logger.warning("Authentication failed: empty API key provided")
+        return jsonify({"error": "Authorization header is missing or invalid"}), 401
+    
+    provided_key = parts[1]
     if provided_key != SERVICE_API_KEY:
+        logger.warning("Authentication failed: invalid API key provided (key length: %d)", len(provided_key) if provided_key else 0)
         return jsonify({"error": "Invalid API Key"}), 401
 
     return None
@@ -195,6 +205,7 @@ def create_speech():
     if auth_resp:
         return auth_resp
 
+    logger.info("Authentication successful for /v1/audio/speech request")
     try:
         data = request.get_json(force=True)
     except Exception:

@@ -740,7 +740,9 @@ def create_speech():
     resp.headers['Accept-Ranges'] = 'bytes'
 
     resp.headers['X-Audio-Size'] = str(len(audio_data))
-    resp.headers['X-Audio-Validation'] = validation_msg
+    # 只设置ASCII字符的验证状态，诊断信息记录在日志中
+    validation_status = "valid" if is_valid else "invalid"
+    resp.headers['X-Audio-Validation'] = validation_status
     resp.headers['X-Audio-FirstFrameOffset'] = str(
         debug.get('trimmed_offset') or debug.get('first_sync_offset') or 0
     )

@@ -1,8 +1,14 @@
+# Web server
 Flask==2.3.3
 Flask-CORS==4.0.0
-python-dotenv==1.0.0
 gunicorn==21.2.0
-gTTS>=2.4.0
-requests>=2.31.0
-pydub>=0.25.1
-numpy>=1.26.0
+
+# Local development (.env loading)
+python-dotenv==1.0.0
+
+# Provider implementations
+# - Google TTS via gTTS
+# - Azure TTS via REST
+# - misc scripts
+gTTS==2.5.4
+requests==2.31.0

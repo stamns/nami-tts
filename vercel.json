@@ -1,14 +1,24 @@
 {
   "builds": [
     {
-      "src": "app.py",  
-      "use": "@vercel/python" 
+      "src": "app.py",
+      "use": "@vercel/python"
     }
   ],
   "routes": [
     {
-      "src": "/(.*)",  
-      "dest": "app.py"  
+      "src": "/(.*)",
+      "dest": "app.py"
     }
-  ]
+  ],
+  "env": {
+    "PYTHONUNBUFFERED": "1",
+    "TZ": "Asia/Shanghai",
+
+    "TIME_SYNC_ENABLED": "true",
+    "TIME_DRIFT_THRESHOLD_SECONDS": "30",
+    "TIME_SYNC_INTERVAL_SECONDS": "300",
+    "TIME_SYNC_URL": "https://bot.n.cn",
+    "TIME_SYNC_USE_SERVER_TIME_ON_DRIFT": "true"
+  }
 }

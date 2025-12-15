@@ -467,6 +467,181 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 @app.route('/')
 def index():
     return render_template_string(HTML_TEMPLATE)
+
+@app.route('/v1/audio/diagnose', methods=['GET', 'POST'])
+def diagnose_connection():
+    """API连接诊断端点"""
+    if not tts_engine:
+        logger.error("TTS引擎未初始化，无法进行诊断")
+        return jsonify({"error": "TTS engine is not available due to initialization failure."}), 503
+    
+    diagnostics = {
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "environment": {
+            "python_version": os.sys.version,
+            "platform": os.name,
+            "debug_mode": DEBUG,
+            "cache_duration": CACHE_DURATION_SECONDS,
+            "api_key_configured": bool(STATIC_API_KEY and STATIC_API_KEY != 'sk-nanoai-your-secret-key')
+        },
+        "network_tests": {},
+        "api_tests": {},
+        "cache_status": {},
+        "errors": []
+    }
+    
+    try:
+        # 1. DNS解析测试
+        import socket
+        try:
+            ip = socket.gethostbyname('bot.n.cn')
+            diagnostics["network_tests"]["dns_resolution"] = {
+                "status": "success",
+                "result": f"bot.n.cn resolves to {ip}"
+            }
+        except Exception as e:
+            diagnostics["network_tests"]["dns_resolution"] = {
+                "status": "failed",
+                "error": str(e)
+            }
+            diagnostics["errors"].append(f"DNS解析失败: {str(e)}")
+        
+        # 2. 网络连接测试
+        try:
+            import urllib.request
+            test_req = urllib.request.Request('https://bot.n.cn', headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(test_req, timeout=10) as response:
+                diagnostics["network_tests"]["basic_connectivity"] = {
+                    "status": "success",
+                    "http_status": response.getcode(),
+                    "content_length": len(response.read())
+                }
+        except Exception as e:
+            diagnostics["network_tests"]["basic_connectivity"] = {
+                "status": "failed",
+                "error": str(e)
+            }
+            diagnostics["errors"].append(f"基础连接失败: {str(e)}")
+        
+        # 3. API端点测试
+        try:
+            headers = tts_engine.get_headers()
+            api_test_url = 'https://bot.n.cn/api/robot/platform'
+            test_response = tts_engine.http_get(api_test_url, headers)
+            diagnostics["api_tests"]["voice_list_endpoint"] = {
+                "status": "success",
+                "response_length": len(test_response),
+                "valid_json": True
+            }
+        except Exception as e:
+            diagnostics["api_tests"]["voice_list_endpoint"] = {
+                "status": "failed", 
+                "error": str(e)
+            }
+            diagnostics["errors"].append(f"语音列表API失败: {str(e)}")
+        
+        # 4. TTS端点测试
+        try:
+            headers = tts_engine.get_headers()
+            headers['Content-Type'] = 'application/x-www-form-urlencoded'
+            tts_test_url = f'https://bot.n.cn/api/tts/v1?roleid=DeepSeek'
+            test_text = "测试"
+            form_data = f'&text={urllib.parse.quote(test_text)}&audio_type=mp3&format=stream'
+            
+            start_time = time.time()
+            response_data = tts_engine.http_post(tts_test_url, form_data, headers)
+            duration = time.time() - start_time
+            
+            # 检查响应类型
+            first_16_bytes = response_data[:16].hex()
+            response_info = {
+                "status": "success",
+                "response_size": len(response_data),
+                "duration_ms": round(duration * 1000, 2),
+                "first_16_bytes": first_16_bytes,
+                "content_type_guess": "JSON" if response_data.startswith((b'{', b'[')) else "MP3"
+            }
+            
+            if response_data.startswith((b'{', b'[')):
+                # JSON响应，尝试解析错误信息
+                try:
+                    json_response = json.loads(response_data.decode('utf-8', errors='replace'))
+                    response_info["json_error"] = json_response
+                    response_info["status"] = "error"
+                    response_info["error_code"] = json_response.get("code", "unknown")
+                    response_info["error_message"] = json_response.get("message", json_response.get("msg", "unknown"))
+                    diagnostics["errors"].append(f"TTS API返回错误: {json_response}")
+                except:
+                    response_info["json_parse_error"] = "响应不是有效的JSON"
+            
+            diagnostics["api_tests"]["tts_endpoint"] = response_info
+            
+        except Exception as e:
+            diagnostics["api_tests"]["tts_endpoint"] = {
+                "status": "failed",
+                "error": str(e)
+            }
+            diagnostics["errors"].append(f"TTS API失败: {str(e)}")
+        
+        # 5. 缓存状态检查
+        try:
+            cache_files = []
+            cache_dir = tts_engine.cache_dir
+            if os.path.exists(cache_dir):
+                for file in os.listdir(cache_dir):
+                    file_path = os.path.join(cache_dir, file)
+                    if os.path.isfile(file_path):
+                        cache_files.append({
+                            "name": file,
+                            "size": os.path.getsize(file_path),
+                            "modified": time.ctime(os.path.getmtime(file_path))
+                        })
+            
+            diagnostics["cache_status"] = {
+                "cache_dir_exists": os.path.exists(tts_engine.cache_dir),
+                "cache_dir_path": tts_engine.cache_dir,
+                "files": cache_files,
+                "voice_count": len(tts_engine.voices)
+            }
+        except Exception as e:
+            diagnostics["cache_status"] = {"error": str(e)}
+            diagnostics["errors"].append(f"缓存状态检查失败: {str(e)}")
+        
+        # 6. SSL/TLS证书检查
+        try:
+            import ssl
+            import socket
+            
+            context = ssl.create_default_context()
+            with socket.create_connection(('bot.n.cn', 443), timeout=10) as sock:
+                with context.wrap_socket(sock, server_hostname='bot.n.cn') as ssock:
+                    cert = ssock.getpeercert()
+                    diagnostics["network_tests"]["ssl_certificate"] = {
+                        "status": "success",
+                        "subject": dict(x[0] for x in cert['subject']),
+                        "issuer": dict(x[0] for x in cert['issuer']),
+                        "not_after": cert['notAfter']
+                    }
+        except Exception as e:
+            diagnostics["network_tests"]["ssl_certificate"] = {
+                "status": "failed",
+                "error": str(e)
+            }
+            diagnostics["errors"].append(f"SSL证书检查失败: {str(e)}")
+            
+    except Exception as e:
+        diagnostics["errors"].append(f"诊断过程异常: {str(e)}")
+        logger.error(f"诊断过程失败: {str(e)}", exc_info=True)
+    
+    # 确定总体状态
+    if diagnostics["errors"]:
+        diagnostics["overall_status"] = "failed"
+        diagnostics["summary"] = f"发现 {len(diagnostics['errors'])} 个问题"
+    else:
+        diagnostics["overall_status"] = "success"
+        diagnostics["summary"] = "所有测试通过"
+    
+    return jsonify(diagnostics)
 @app.route('/v1/audio/speech', methods=['POST'])
 def create_speech():
     if not tts_engine:
@@ -624,10 +799,47 @@ def list_models():
     return jsonify({"object": "list", "data": models_data})
 @app.route('/health', methods=['GET'])
 def health_check():
-    if tts_engine and model_cache:
-        model_count = len(model_cache.get_models())
-        return jsonify({"status": "ok", "models_in_cache": model_count, "timestamp": int(time.time())}), 200
-    return jsonify({"status": "error", "message": "TTS engine not initialized"}), 503
+    """健康检查端点"""
+    if not tts_engine:
+        return jsonify({
+            "status": "error", 
+            "message": "TTS engine not initialized",
+            "timestamp": int(time.time())
+        }), 503
+    
+    if not model_cache:
+        return jsonify({
+            "status": "error", 
+            "message": "Model cache not initialized",
+            "timestamp": int(time.time())
+        }), 503
+    
+    # 简单的可用性检查
+    voice_count = len(tts_engine.voices) if tts_engine.voices else 0
+    
+    status_info = {
+        "status": "ok",
+        "models_in_cache": voice_count,
+        "timestamp": int(time.time()),
+        "engine": {
+            "name": tts_engine.name,
+            "voices_loaded": voice_count,
+            "cache_directory": tts_engine.cache_dir,
+            "cache_exists": os.path.exists(tts_engine.cache_dir)
+        },
+        "configuration": {
+            "api_key_configured": bool(STATIC_API_KEY and STATIC_API_KEY != 'sk-nanoai-your-secret-key'),
+            "debug_mode": DEBUG,
+            "cache_duration": CACHE_DURATION_SECONDS
+        }
+    }
+    
+    # 如果没有可用声音，返回警告状态
+    if voice_count == 0:
+        status_info["status"] = "warning"
+        status_info["message"] = "TTS service running but no voices available"
+    
+    return jsonify(status_info), 200 if voice_count > 0 else 200
 if __name__ == '__main__':
     if tts_engine:
         logger.info("预热模型缓存...")

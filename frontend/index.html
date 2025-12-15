@@ -6,15 +6,20 @@
   <title>NanoAI TTS 控制台</title>
   <style>
     :root {
-      --bg1: #667eea;
-      --bg2: #764ba2;
+      --page-bg1: #0b0d10;
+      --page-bg2: #201024;
+
+      --bg1: #a855f7;
+      --bg2: #f97316;
+
       --card: rgba(255, 255, 255, 0.98);
       --border: rgba(0, 0, 0, 0.10);
       --muted: rgba(0, 0, 0, 0.60);
       --text: rgba(0, 0, 0, 0.88);
+
       --danger: #c62828;
       --ok: #2e7d32;
-      --info: #1565c0;
+      --info: #b45309;
     }
 
     * { box-sizing: border-box; }
@@ -22,7 +27,10 @@
     body {
       margin: 0;
       font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
-      background: linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 100%);
+      background:
+        radial-gradient(1000px circle at 18% 12%, rgba(168, 85, 247, 0.18), transparent 48%),
+        radial-gradient(900px circle at 84% 16%, rgba(249, 115, 22, 0.14), transparent 46%),
+        linear-gradient(135deg, var(--page-bg1) 0%, var(--page-bg2) 100%);
       min-height: 100vh;
       color: var(--text);
     }
@@ -95,22 +103,44 @@
       padding: 10px 12px;
       border-radius: 12px;
       font-weight: 600;
-      color: white;
-      background: rgba(255, 255, 255, 0.20);
-      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: rgba(0, 0, 0, 0.82);
+      background: rgba(0, 0, 0, 0.05);
+      border: 1px solid rgba(0, 0, 0, 0.12);
       transition: transform 0.15s ease, background 0.15s ease;
       user-select: none;
     }
 
-    .btn:hover { transform: translateY(-1px); background: rgba(255, 255, 255, 0.26); }
+    .btn:hover { transform: translateY(-1px); background: rgba(0, 0, 0, 0.08); }
     .btn:active { transform: translateY(0); }
-    .btn.primary { background: rgba(15, 23, 42, 0.85); border-color: rgba(255, 255, 255, 0.12); }
-    .btn.primary:hover { background: rgba(15, 23, 42, 0.92); }
+
+    .header .btn {
+      color: rgba(255, 255, 255, 0.94);
+      background: rgba(255, 255, 255, 0.18);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+
+    .header .btn:hover { background: rgba(255, 255, 255, 0.24); }
+
+    .btn.primary {
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.92), rgba(249, 115, 22, 0.92));
+      color: white;
+      border-color: rgba(255, 255, 255, 0.18);
+    }
+    .btn.primary:hover {
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.98), rgba(249, 115, 22, 0.98));
+    }
 
     .btn.ghost {
       background: transparent;
+      border-color: rgba(0, 0, 0, 0.14);
+    }
+
+    .header .btn.ghost {
+      background: transparent;
       border-color: rgba(255, 255, 255, 0.25);
     }
+
+    .header .btn.ghost:hover { background: rgba(255, 255, 255, 0.14); }
 
     .btn.secondary {
       background: rgba(0, 0, 0, 0.08);
@@ -122,6 +152,7 @@
 
     .btn.danger {
       background: rgba(198, 40, 40, 0.9);
+      color: white;
       border-color: rgba(255, 255, 255, 0.12);
     }
 
@@ -176,7 +207,7 @@
     }
 
     .status.show { display: block; }
-    .status.info { background: rgba(21, 101, 192, 0.08); border-color: rgba(21, 101, 192, 0.25); color: var(--info); }
+    .status.info { background: rgba(180, 83, 9, 0.10); border-color: rgba(180, 83, 9, 0.28); color: var(--info); }
     .status.ok { background: rgba(46, 125, 50, 0.08); border-color: rgba(46, 125, 50, 0.25); color: var(--ok); }
     .status.err { background: rgba(198, 40, 40, 0.08); border-color: rgba(198, 40, 40, 0.25); color: var(--danger); }
 
@@ -193,8 +224,8 @@
     }
 
     textarea:focus {
-      border-color: rgba(102, 126, 234, 0.8);
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.18);
+      border-color: rgba(168, 85, 247, 0.85);
+      box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.18);
     }
 
     .input-actions {
@@ -299,8 +330,8 @@
     }
 
     input:focus, select:focus {
-      border-color: rgba(102, 126, 234, 0.8);
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.14);
+      border-color: rgba(168, 85, 247, 0.85);
+      box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.14);
     }
 
     .inline {
@@ -312,7 +343,7 @@
 
     .range-row { margin-top: 10px; }
 
-    input[type=range] { width: 100%; }
+    input[type=range] { width: 100%; accent-color: var(--bg1); }
 
     .range-label {
       display: flex;
